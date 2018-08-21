@@ -1,0 +1,12 @@
+name: SmokeExposures
+title: SmokeExposures
+username:
+account: vargo
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 404163
+bundleId: 1546846
+url: https://vargo.shinyapps.io/SmokeExposures/
+when: 1534871095.1998
+asMultiple: FALSE
+asStatic: FALSE
