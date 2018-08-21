@@ -302,7 +302,7 @@ server <- function(input, output) {
    
    output$VulnPlot <- renderPlot({
        
-       plot %>% ggplot(aes(x=race, y= PersonDays, fill = cohort)) + geom_bar(stat="identity") + facet_grid(.~SmokeDensity~., scales="free_y")
+       vuln() %>% ggplot(aes(x=race, y= PersonDays, fill = cohort)) + geom_bar(stat="identity") + facet_grid(.~SmokeDensity~., scales="free_y")
        
    })
     
