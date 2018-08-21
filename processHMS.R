@@ -60,29 +60,52 @@ for (day in dateList){
 
 saveRDS(AllDays,file = "~/GitHub/WFSmokeExp/Jan29ToAug152018_2.rds")
 
-AllDays <- readRDS(file = "~/GitHub/WFSmokeExp/Jan29ToAug152018.rds")
+AllData <- readRDS(file = "~/GitHub/WFSmokeExp/Jan29ToAug152018_2.rds") %>%
+  mutate(date = as.Date(paste0(year, month, day), format= "%Y%m%d"))
 
 
 
-head(AllDays)
 
-foo <- AllDays %>% 
+dateList <- 
+  format(seq(as.Date("2018-07-01"),as.Date("2018-08-13"), by = "day"),"%Y%m%d")
+  
+
+
+HMLwide <- 
+  AllData %>% 
+    filter(date >= dateList[1] & date <= dateList[length(dateList)]) %>%
+    group_by(smoke, ct10) %>%
+    summarize(NumberOfDays = length(date)) %>%
+    ungroup() %>% 
+    spread(key = smoke,value = NumberOfDays) %>%
+    rename(light = "Smoke (Light)",
+           medium = "Smoke (Medium)",
+           heavy = "Smoke (Heavy)")
+
+
+
+
+
+head(AllData)
+
+
+HMLwide <- AllData %>% 
   group_by(smoke, ct10) %>%
   summarize(NumberOfDays = length(date)) %>%
-  ungroup()
-
-foo2 <- foo %>% spread(key = smoke,value = NumberOfDays) %>%
+  ungroup() %>% 
+  spread(key = smoke,value = NumberOfDays) %>%
   rename(light = "Smoke (Light)",
          medium = "Smoke (Medium)",
          heavy = "Smoke (Heavy)")
 
-saveRDS(foo2,file = "~/GitHub/WFSmokeExp/SmokeExposures/Jan29ToAug152018_wide.rds")
+saveRDS(HMLwide,file = "~/GitHub/WFSmokeExp/Jan29ToAug152018_wide.rds")
 
 library(leaflet)
 
-CAtracts <-  st_read(dsn = "~/GitHub/WFSmokeExp/tracts.GeoJSON", stringsAsFactors = F) %>% st_transform(crs = 4326) %>%
+CAtracts <-  st_read(dsn = "~/GitHub/WFSmokeExp/SmokeExposures/tractsSM.GeoJSON", stringsAsFactors = F) %>% st_transform(crs = 4326) %>%
   mutate(COUNTYFI_1 = as.character(paste0(STATE, COUNTY)))
 
+dateList
 
 
 
@@ -90,18 +113,18 @@ CAtracts <-  st_read(dsn = "~/GitHub/WFSmokeExp/tracts.GeoJSON", stringsAsFactor
 
 pal_l <- colorBin(palette =  "Reds",
                   bins = 7,
-                  domain = na.exclude(foo2$light))
+                  domain = na.exclude(HMLwide$light))
 
 pal_m <- colorBin(palette =  "Reds",
                   bins = 7,
-                  domain = na.exclude(foo2$medium))
+                  domain = na.exclude(HMLwide$medium))
 
 pal_h <- colorBin(palette =  "Reds",
                   bins = 7,
-                  domain = na.exclude(foo2$heavy))
+                  domain = na.exclude(HMLwide$heavy))
 
 
-mapTemp <- CAtracts %>% inner_join(foo2)
+mapTemp <- CAtracts %>% inner_join(HMLwide)
 
 
 mapTemp %>%
@@ -187,13 +210,16 @@ elderly <- read.csv("~/CHVI_copy/data/tables/tracts/CHVI_elderly_tract.csv", hea
 
 
 
-vuln <- inner_join(children, elderly) %>% gather(children, elderly, total, key = cohort, value = population) %>% saveRDS("~/GitHub/WFSmokeExp/SmokeExposures/vuln.rds")
+vuln <- inner_join(children, elderly) %>% 
+  mutate(other = total - children - elderly) %>%
+  gather(children, elderly, total, key = cohort, value = population) %>% 
+  saveRDS("~/GitHub/WFSmokeExp/SmokeExposures/vuln.rds")
 
 
 library(plotly)
 
  plot <- vuln %>%
-  inner_join({mutate(foo2, ct10 = as.numeric(ct10))}) %>% 
+  inner_join({mutate(HMLwide, ct10 = as.numeric(ct10))}) %>% 
   mutate(lightPD = population * light,
          mediumPD = population * medium,
          heavyPD = population * heavy) %>%
@@ -202,9 +228,11 @@ library(plotly)
   summarize(Heavy = sum(heavyPD), 
              Medium = sum(mediumPD),
              Light = sum(lightPD)) %>% ungroup() %>%
-   gather(Heavy, Medium, Light, key = SmokeDensity, value = PersonDays)
+   gather(Heavy, Medium, Light, key = SmokeDensity, value = PersonDays) %>%
+   mutate(SmokeDensity = factor(SmokeDensity, levels = c("Light","Medium","Heavy")))
    
   plot %>% ggplot(aes(x=race, y= PersonDays, fill = cohort)) + geom_bar(stat="identity") + facet_grid(.~SmokeDensity~., scales="free_y")
+
 
 
 

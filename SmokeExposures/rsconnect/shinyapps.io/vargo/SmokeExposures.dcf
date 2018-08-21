@@ -5,8 +5,8 @@ account: vargo
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 404163
-bundleId: 1547394
+bundleId: 1547406
 url: https://vargo.shinyapps.io/SmokeExposures/
-when: 1534887963.544
+when: 1534888277.26463
 asMultiple: FALSE
 asStatic: FALSE
