@@ -3,10 +3,10 @@ rm(list = ls())
 library(tidyverse)
 library(sf)
 
-dateList <- format(seq(as.Date("2018/01/29"),as.Date("2018/08/15"), by = "day"),"%Y%m%d")
+dateList <- format(seq(as.Date("2018/08/13"),as.Date("2018/08/14"), by = "day"),"%Y%m%d")
 
 # smokeFileZip <- "http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/GIS/ARCHIVE/hms_smoke20180808.zip"
-CAtracts <-  st_read(dsn = "~/GitHub/WFSmokeExp/tracts.GeoJSON", stringsAsFactors = F) %>% st_transform(crs = 4326) %>%
+CAtracts <-  st_read(dsn = "~/GitHub/WFSmokeExp/SmokeExposures/tractsSM.GeoJSON", stringsAsFactors = F) %>% st_transform(crs = 4326) %>%
   mutate(COUNTYFI_1 = as.character(paste0(STATE, COUNTY)))
 
 smokeDay <- function(HMSday){
@@ -22,15 +22,16 @@ smokeDay <- function(HMSday){
       for(l in 1: length(layers)){
       
         Smk <- st_read(dsn = smokeFileName, layer = layers[l]) %>%
-          mutate(date = sapply(str_split(Description, pattern = " "),"[",5),
-                 time = sapply(str_split(Description, pattern = " "),"[",6), 
-                 year = year,
+          mutate(year = year,
                  month = month,
-                 day = day, 
+                 day = day,
+                 date = paste0(year, month, day),
                  smoke = layers[l])
         
         SmkLayerDayInt <- st_intersection(Smk, CAtracts) 
         st_geometry(SmkLayerDayInt) <- NULL
+        # Smk <-Smk %>% select(date, year, month, day, smoke, ct10) %>%
+          
       
         if(exists("singleDay")){
           singleDay <- rbind(singleDay, SmkLayerDayInt)
@@ -58,24 +59,24 @@ for (day in dateList){
  
 }
 
-saveRDS(AllDays,file = "~/GitHub/WFSmokeExp/Jan29ToAug152018_2.rds")
+saveRDS(AllDays,file = "~/GitHub/WFSmokeExp/Aug13ToAug142018.rds")
 
 AllData <- readRDS(file = "~/GitHub/WFSmokeExp/Jan29ToAug152018_2.rds") %>%
   mutate(date = as.Date(paste0(year, month, day), format= "%Y%m%d"))
 
 
+length(seq(as.Date("2018/08/13"),as.Date("2018/08/14"), by = "day"))
+dateList <- c(as.Date("2018-08-12"), as.Date("2018-08-13"))
 
 
-dateList <- 
-  format(seq(as.Date("2018-07-01"),as.Date("2018-08-13"), by = "day"),"%Y%m%d")
-  
-
-
-HMLwide <- 
+SmokeDaysByTract <- 
   AllData %>% 
-    filter(date >= dateList[1] & date <= dateList[length(dateList)]) %>%
+    filter(
+      as.Date(date) >= as.character(dateList[1]) &
+        as.Date(date) <= as.character(dateList[2])
+    ) %>%
     group_by(smoke, ct10) %>%
-    summarize(NumberOfDays = length(date)) %>%
+    summarize(NumberOfDays = length(unique(date))) %>%
     ungroup() %>% 
     spread(key = smoke,value = NumberOfDays) %>%
     rename(light = "Smoke (Light)",

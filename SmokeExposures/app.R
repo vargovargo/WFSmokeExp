@@ -17,14 +17,12 @@ defaultDates <- format(seq(as.Date("2018/01/29"),as.Date("2018/08/15"), by = "da
 AllData <- readRDS(file = "Jan29ToAug152018.rds") %>% mutate(date = as.Date(paste0(year, month, day), format = "%Y%m%d"))
 
 
-# HMLwide <- readRDS("Jan29ToAug152018_wide.rds")
+# SmokeDaysByTract <- readRDS("Jan29ToAug152018_wide.rds")
 
 vuln <- readRDS("vuln.rds")
 
 CAtracts <-  st_read(dsn = "tractsSM.GeoJSON", stringsAsFactors = F) %>% st_transform(crs = 4326) %>%
     mutate(COUNTYFI_1 = as.character(paste0(STATE, COUNTY)))
-
-
 
 ui <- dashboardPage(
     dashboardHeader(title = "Wildfire Smoke"),
@@ -80,7 +78,7 @@ ui <- dashboardPage(
         
         # second Tab Content
         tabItem(tabName = "back",
-                HTML("<h4>This data comes from the Nation Oceanic and Atmosphereic Administration's Office of Satellite and Product Operations. </h4>
+                HTML("<h4>This data comes from the Nation Oceanic and Atmospheric Administration's Office of Satellite and Product Operations. </h4>
 <h6>The NOAA Smoke and Fire Products can be found <a href='https://www.ospo.noaa.gov/Products/land/hms.html' target='_blank'> at their website</a>. </h6> 
 <ul>
 <li>The initial HMS product for the current day is created and updated by a satellite analyst roughly between 8am and 10am Eastern Time. After 10am, the analysis is fine-tuned as time permits as additional satellite data becomes available. Areas of smoke are analyzed and added to the analysis during daylight hours as visible satellite imagery becomes available. The product is finalized and 'completed' for the archive the following morning - generally by around 800am.</li>
@@ -91,7 +89,7 @@ ui <- dashboardPage(
                      <ul>
                      <li><a href='https://www.ospo.noaa.gov/data/land/fire/fire.kml'>Fire</a></li>
                      <li><a href='https://www.ospo.noaa.gov/data/land/fire/smoke.kml'>Smoke</a></li>
-                     </ul>"), 
+                     </ul><p>Checking things below: number of days and then reactive table...</p>"), 
                 textOutput("text"),
                 tableOutput("table")
                 
@@ -107,14 +105,14 @@ server <- function(input, output) {
     })
     
     
-    HMLwide <- reactive({
+    SmokeDaysByTract <- reactive({
         AllData %>%
             filter(
                 as.Date(date) >= as.character(input$Time[1]) &
                     as.Date(date) <= as.character(input$Time[2])
             ) %>%
             group_by(smoke, ct10) %>%
-            summarize(NumberOfDays = length(date)) %>%
+            summarize(NumberOfDays = length(unique(date))) %>%
             ungroup() %>%
             spread(key = smoke, value = NumberOfDays) %>%
             rename(light = "Smoke (Light)",
@@ -124,27 +122,46 @@ server <- function(input, output) {
     
     
     
+    # SmokeTractsByDay<- reactive({
+    #   AllData %>%
+    #     filter(
+    #       as.Date(date) >= as.character(input$Time[1]) &
+    #         as.Date(date) <= as.character(input$Time[2])
+    #     ) %>%
+    #     group_by(smoke, ct10) %>%
+    #     summarize(NumberOfDays = length(date)) %>%
+    #     ungroup() %>%
+    #     spread(key = smoke, value = NumberOfDays) %>%
+    #     rename(light = "Smoke (Light)",
+    #            medium = "Smoke (Medium)",
+    #            heavy = "Smoke (Heavy)")
+    # })
+    
+    mapTemp <- reactive({
+        CAtracts %>% inner_join(SmokeDaysByTract())
+    })
+    
+    
  ############ MAP ###############################   
   #################### alternative mapping with all three layers in the single map ######################
     # output$HMLdaysMap <- renderLeaflet({
     #     
     #     pal_l <- colorBin(palette =  "Reds",
     #                       bins = 7,
-    #                       domain = na.exclude(HMLwide()$light))
+    #                       domain = na.exclude(SmokeDaysByTract()$light))
     #     
     #     pal_m <- colorBin(palette =  "Reds",
     #                       bins = 7,
-    #                       domain = na.exclude(HMLwide()$medium))
+    #                       domain = na.exclude(SmokeDaysByTract()$medium))
     #     
     #     pal_h <- colorBin(palette =  "Reds",
     #                       bins = 7,
-    #                       domain = na.exclude(HMLwide()$heavy))
+    #                       domain = na.exclude(SmokeDaysByTract()$heavy))
     #     
     #     
-    #     mapTemp <- CAtracts %>% inner_join(HMLwide())
+    #         
     #     
-    #     
-    #     mapTemp %>%
+    #     mapTemp() %>%
     #         leaflet()  %>%
     #         addProviderTiles(providers$CartoDB.Positron) %>%
     #         addPolygons(
@@ -160,9 +177,9 @@ server <- function(input, output) {
     #             ),
     #             popup = paste0(
     #                 "This tract has experienced ",
-    #                 mapTemp$light,
+    #                 mapTemp()$light,
     #                 " days (",
-    #                 round(100 * mapTemp$light / 199, 1),
+    #                 round(100 * mapTemp()$light / 199, 1),
     #                 "%) of Light Smoke Exposure."
     #             ),
     #             group = "Light Smoke"
@@ -180,9 +197,9 @@ server <- function(input, output) {
     #             ),
     #             popup = paste0(
     #                 "This tract has experienced ",
-    #                 mapTemp$medium,
+    #                 mapTemp()$medium,
     #                 " days (",
-    #                 round(100 * mapTemp$medium / 199, 1),
+    #                 round(100 * mapTemp()$medium / 199, 1),
     #                 "%) of Medium Smoke Exposure."
     #             ),
     #             group = "Medium Smoke"
@@ -200,9 +217,9 @@ server <- function(input, output) {
     #             ),
     #             popup = paste0(
     #                 "This tract has experienced ",
-    #                 mapTemp$heavy,
+    #                 mapTemp()$heavy,
     #                 " days (",
-    #                 round(100 * mapTemp$heavy / 199, 1),
+    #                 round(100 * mapTemp()$heavy / 199, 1),
     #                 "%) of Heavy Smoke Exposure."
     #             ),
     #             group = "Heavy Smoke"
@@ -219,16 +236,16 @@ server <- function(input, output) {
     
     ################### mapping #######################
     output$HMLdaysMap <- renderLeaflet({
-        mapTemp <- CAtracts %>% inner_join(HMLwide())
+        
 
         if(input$Smoke == "Light"){
 
             pal_l <- colorBin(palette =  "Reds",
                               bins = 7,
-                              domain = na.exclude(HMLwide()$light))
+                              domain = na.exclude(SmokeDaysByTract()$light))
             
             
-            mapTemp %>%
+            mapTemp() %>%
                 leaflet()  %>%
                 addProviderTiles(providers$CartoDB.Positron) %>%
                 addPolygons(
@@ -244,9 +261,9 @@ server <- function(input, output) {
                     ),
                     popup = paste0(
                         "This tract has experienced ",
-                        mapTemp$light,
+                        mapTemp()$light,
                         " days (",
-                        round(100 * mapTemp$light /length(dateList()), 1),
+                        round(100 * mapTemp()$light/length(dateList()), 1),
                         "%) of Light Smoke Exposure."
                     ),
                     group = "Light Smoke"
@@ -258,9 +275,9 @@ server <- function(input, output) {
 
             pal_m <- colorBin(palette =  "Reds",
                               bins = 7,
-                              domain = na.exclude(HMLwide()$medium))
+                              domain = na.exclude(SmokeDaysByTract()$medium))
 
-            mapTemp %>%
+            mapTemp() %>%
                 leaflet()  %>%
                 addProviderTiles(providers$CartoDB.Positron) %>%
                 addPolygons(
@@ -276,9 +293,9 @@ server <- function(input, output) {
                     ),
                     popup = paste0(
                         "This tract has experienced ",
-                        mapTemp$medium,
+                        mapTemp()$medium,
                         " days (",
-                        round(100 * mapTemp$medium / length(dateList()), 1),
+                        round(100 * mapTemp()$medium / length(dateList()), 1),
                         "%) of Medium Smoke Exposure."
                     ),
                     group = "Medium Smoke"
@@ -288,9 +305,9 @@ server <- function(input, output) {
 
             pal_h <- colorBin(palette =  "Reds",
                               bins = 7,
-                              domain = na.exclude(HMLwide()$heavy))
+                              domain = na.exclude(SmokeDaysByTract()$heavy))
             
-            mapTemp %>%
+            mapTemp() %>%
                 leaflet()  %>%
                 addProviderTiles(providers$CartoDB.Positron) %>%
                 addPolygons(
@@ -306,9 +323,9 @@ server <- function(input, output) {
                     ),
                     popup = paste0(
                         "This tract has experienced ",
-                        mapTemp$heavy,
+                        mapTemp()$heavy,
                         " days (",
-                        round(100 * mapTemp$heavy / length(dateList()), 1),
+                        round(100 * mapTemp()$heavy / length(dateList()), 1),
                         "%) of Heavy Smoke Exposure."
                     ),
                     group = "Heavy Smoke"
@@ -325,7 +342,7 @@ server <- function(input, output) {
     plotData <- reactive({
        
        vuln %>%
-           inner_join({mutate(HMLwide(), ct10 = as.numeric(ct10))}) %>% 
+           inner_join({mutate(SmokeDaysByTract(), ct10 = as.numeric(ct10))}) %>% 
            mutate(lightPD = population * light,
                   mediumPD = population * medium,
                   heavyPD = population * heavy) %>%
@@ -347,9 +364,9 @@ server <- function(input, output) {
        
    })
     
-    output$table <- renderTable({HMLwide()})
+    output$table <- renderTable(SmokeDaysByTract())
     
-    output$text <- renderText(as.Date(input$Time[1], "%Y%m%d" ))
+    output$text <- renderText(paste0("number of days in the period you selected: ",length(dateList())))
     
     
     }
