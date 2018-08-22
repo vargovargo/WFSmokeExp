@@ -72,7 +72,8 @@ ui <- dashboardPage(
                 )
                 
                 
-                )
+                ), 
+                wellPanel(plotOutput("TimePlot"))
                 ),
         
         
@@ -89,10 +90,11 @@ ui <- dashboardPage(
                      <ul>
                      <li><a href='https://www.ospo.noaa.gov/data/land/fire/fire.kml'>Fire</a></li>
                      <li><a href='https://www.ospo.noaa.gov/data/land/fire/smoke.kml'>Smoke</a></li>
-                     </ul><p>Checking things below: number of days and then reactive table...</p>"), 
-                textOutput("text"),
-                tableOutput("table")
-                
+                     </ul><p>Checking things below: number of days and then reactive table...</p>")
+                # , 
+                # textOutput("text"),
+                # tableOutput("table")
+                # 
                 ))
     ))
 
@@ -111,16 +113,37 @@ server <- function(input, output) {
                 as.Date(date) >= as.character(input$Time[1]) &
                     as.Date(date) <= as.character(input$Time[2])
             ) %>%
-            group_by(smoke, ct10) %>%
-            summarize(NumberOfDays = length(unique(date))) %>%
-            ungroup() %>%
-            spread(key = smoke, value = NumberOfDays) %>%
-            rename(light = "Smoke (Light)",
-                   medium = "Smoke (Medium)",
-                   heavy = "Smoke (Heavy)")
+        mutate(smoke = factor(ifelse(smoke == "Smoke (Light)", "light", 
+                                     ifelse(smoke == "Smoke (Heavy)","heavy", "medium")), levels=c("light","medium","heavy"))) %>%   
+        group_by(smoke, ct10) %>%
+        summarize(NumberOfDays = length(unique(date))) %>%
+        ungroup() %>% 
+        spread(key = smoke,value = NumberOfDays) 
     })
     
     
+    
+    SmokeByDay <- reactive ({
+      AllData %>% 
+      filter(
+        as.Date(date) >= as.character(input$Time[1]) &
+          as.Date(date) <= as.character(input$Time[2])
+      ) %>%
+      mutate(smoke = factor(ifelse(smoke == "Smoke (Light)", "light", 
+                                   ifelse(smoke == "Smoke (Heavy)","heavy", "medium")), levels=c("light","medium","heavy"))) %>%
+      select(smoke, ct10, date) %>% inner_join({
+        vuln %>% 
+          mutate(ct10 = paste0("0",as.character(as.numeric(ct10)))) %>%
+          filter(race == "Total") %>%
+          spread(key = cohort, value = population) %>%
+          select(-race, )
+      }) %>%
+      group_by(ct10, date, smoke) %>%
+      summarize(Persons = mean(total, na.rm=T)) %>%
+      group_by(smoke, date) %>%
+      summarize(Persons = sum(Persons, na.rm=T))
+    })
+   
     
     # SmokeTractsByDay<- reactive({
     #   AllData %>%
@@ -364,11 +387,24 @@ server <- function(input, output) {
        plotData() %>% ggplot(aes(x=race, y= PersonDays, fill = cohort)) + geom_bar(stat="identity") + facet_grid(.~SmokeDensity~., scales="free_y")
        
    })
-    
-    output$table <- renderTable(SmokeDaysByTract())
-    
-    output$text <- renderText(paste0("number of days in the period you selected: ",length(dateList())))
-    
+   
+   
+   
+   
+   ##################### TIme Series plot #################################
+   
+   output$TimePlot <- renderPlot({
+   
+   SmokeByDay() %>% ggplot(aes(x = date, y= Persons/1000000, fill = smoke)) + geom_area(position = "dodge") + ylab("Millions of People \n (Pop of CA shown dashed)") + xlab("Date") + geom_hline(yintercept = 37.25, color = "red", linetype="dashed")
+   })
+   
+   
+   ################# random outputs to check some things #############
+    # 
+    # output$table <- renderTable(SmokeDaysByTract())
+    # 
+    # output$text <- renderText(paste0("number of days in the period you selected: ",length(dateList())))
+    # 
     
     }
 

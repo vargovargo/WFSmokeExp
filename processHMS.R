@@ -75,17 +75,14 @@ SmokeDaysByTract <-
       as.Date(date) >= as.character(dateList[1]) &
         as.Date(date) <= as.character(dateList[2])
     ) %>%
+    mutate(smoke = factor(ifelse(smoke == "Smoke (Light)", "light", 
+                               ifelse(smoke == "Smoke (Heavy)","heavy", "medium")), levels=c("light","medium","heavy"))) %>%   
     group_by(smoke, ct10) %>%
     summarize(NumberOfDays = length(unique(date))) %>%
     ungroup() %>% 
-    spread(key = smoke,value = NumberOfDays) %>%
-    rename(light = "Smoke (Light)",
-           medium = "Smoke (Medium)",
-           heavy = "Smoke (Heavy)")
+    spread(key = smoke,value = NumberOfDays) 
 
-
-
-
+  
 library(leaflet)
 
 CAtracts <-  st_read(dsn = "~/GitHub/WFSmokeExp/SmokeExposures/tractsSM.GeoJSON", stringsAsFactors = F) %>% st_transform(crs = 4326) %>%
@@ -222,11 +219,25 @@ library(plotly)
 
 
 
+  
+SmokeByDay <- 
+    AllData %>% 
+    # filter(
+    #   as.Date(date) >= as.character(dateList[1]) &
+    #     as.Date(date) <= as.character(dateList[2])
+    # ) %>%
+  mutate(smoke = factor(ifelse(smoke == "Smoke (Light)", "light", 
+                               ifelse(smoke == "Smoke (Heavy)","heavy", "medium")), levels=c("light","medium","heavy"))) %>%
+  select(smoke, ct10, date) %>% inner_join({
+      vuln %>% 
+        mutate(ct10 = paste0("0",as.character(as.numeric(ct10)))) %>%
+        filter(race == "Total") %>%
+        spread(key = cohort, value = population) %>%
+        select(-race, )
+      }) %>%
+  group_by(ct10, date, smoke) %>%
+  summarize(Persons = mean(total, na.rm=T)) %>%
+  group_by(smoke, date) %>%
+  summarize(Persons = sum(Persons, na.rm=T))
 
-
-
-
-
-
-
-
+SmokeByDay %>% ggplot(aes(x = date, y= Persons/1000000, fill = smoke)) + geom_area(position = "dodge") + ylab("Millions of People \n (Pop of CA shown dashed)") + xlab("Date") + geom_hline(yintercept = 37.25, color = "red", linetype="dashed")
