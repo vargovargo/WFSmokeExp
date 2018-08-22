@@ -52,7 +52,7 @@ ui <- dashboardPage(
                             label = "Select Window",
                             min = as.Date(defaultDates[1],"%Y%m%d"),
                             max = as.Date(defaultDates[length(defaultDates)],"%Y%m%d"),
-                            start = as.Date("20180701","%Y%m%d"),
+                            start = as.Date("20180601","%Y%m%d"),
                             end = as.Date("20180813","%Y%m%d"),
                             separator = " to ", 
                             format = )
