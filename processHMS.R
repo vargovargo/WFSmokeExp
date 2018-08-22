@@ -86,21 +86,6 @@ SmokeDaysByTract <-
 
 
 
-
-head(AllData)
-
-
-HMLwide <- AllData %>% 
-  group_by(smoke, ct10) %>%
-  summarize(NumberOfDays = length(date)) %>%
-  ungroup() %>% 
-  spread(key = smoke,value = NumberOfDays) %>%
-  rename(light = "Smoke (Light)",
-         medium = "Smoke (Medium)",
-         heavy = "Smoke (Heavy)")
-
-saveRDS(HMLwide,file = "~/GitHub/WFSmokeExp/Jan29ToAug152018_wide.rds")
-
 library(leaflet)
 
 CAtracts <-  st_read(dsn = "~/GitHub/WFSmokeExp/SmokeExposures/tractsSM.GeoJSON", stringsAsFactors = F) %>% st_transform(crs = 4326) %>%
@@ -114,18 +99,18 @@ dateList
 
 pal_l <- colorBin(palette =  "Reds",
                   bins = 7,
-                  domain = na.exclude(HMLwide$light))
+                  domain = na.exclude(SmokeDaysByTract$light))
 
 pal_m <- colorBin(palette =  "Reds",
                   bins = 7,
-                  domain = na.exclude(HMLwide$medium))
+                  domain = na.exclude(SmokeDaysByTract$medium))
 
 pal_h <- colorBin(palette =  "Reds",
                   bins = 7,
-                  domain = na.exclude(HMLwide$heavy))
+                  domain = na.exclude(SmokeDaysByTract$heavy))
 
 
-mapTemp <- CAtracts %>% inner_join(HMLwide)
+mapTemp <- CAtracts %>% inner_join(SmokeDaysByTract)
 
 
 mapTemp %>%
@@ -213,22 +198,23 @@ elderly <- read.csv("~/CHVI_copy/data/tables/tracts/CHVI_elderly_tract.csv", hea
 
 vuln <- inner_join(children, elderly) %>% 
   mutate(other = total - children - elderly) %>%
-  gather(children, elderly, total, key = cohort, value = population) %>% 
+  gather(children, elderly, other, total, key = cohort, value = population) %>% 
   saveRDS("~/GitHub/WFSmokeExp/SmokeExposures/vuln.rds")
 
 
 library(plotly)
 
  plot <- vuln %>%
-  inner_join({mutate(HMLwide, ct10 = as.numeric(ct10))}) %>% 
+  mutate(ct10 = paste0("0",as.character(as.numeric(ct10)))) %>%
+  inner_join(SmokeDaysByTract) %>% 
   mutate(lightPD = population * light,
          mediumPD = population * medium,
          heavyPD = population * heavy) %>%
   filter(cohort != "total", race != "Total") %>%
   group_by(cohort, race) %>%
-  summarize(Heavy = sum(heavyPD), 
-             Medium = sum(mediumPD),
-             Light = sum(lightPD)) %>% ungroup() %>%
+  summarize(Heavy = sum(heavyPD, na.rm = T),
+            Medium = sum(mediumPD, na.rm = T),
+            Light = sum(lightPD, na.rm = T)) %>% ungroup() %>%
    gather(Heavy, Medium, Light, key = SmokeDensity, value = PersonDays) %>%
    mutate(SmokeDensity = factor(SmokeDensity, levels = c("Light","Medium","Heavy")))
    

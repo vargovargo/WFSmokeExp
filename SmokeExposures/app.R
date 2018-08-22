@@ -341,18 +341,19 @@ server <- function(input, output) {
     
     plotData <- reactive({
        
-       vuln %>%
-           inner_join({mutate(SmokeDaysByTract(), ct10 = as.numeric(ct10))}) %>% 
-           mutate(lightPD = population * light,
-                  mediumPD = population * medium,
-                  heavyPD = population * heavy) %>%
-           filter(cohort != "total", race != "Total") %>%
-           group_by(cohort, race) %>%
-           summarize(Heavy = sum(heavyPD), 
-                     Medium = sum(mediumPD),
-                     Light = sum(lightPD)) %>% ungroup() %>%
-           gather(Heavy, Medium, Light, key = SmokeDensity, value = PersonDays) %>%
-           mutate(SmokeDensity = factor(SmokeDensity, levels = c("Light","Medium","Heavy")))
+      vuln %>%
+        mutate(ct10 = paste0("0",as.character(as.numeric(ct10)))) %>%
+        inner_join(SmokeDaysByTract()) %>% 
+        mutate(lightPD = population * light,
+               mediumPD = population * medium,
+               heavyPD = population * heavy) %>%
+        filter(cohort != "total" & cohort != "other" &  race != "Total") %>%
+        group_by(cohort, race) %>%
+        summarize(Heavy = sum(heavyPD, na.rm = T),
+                  Medium = sum(mediumPD, na.rm = T),
+                  Light = sum(lightPD, na.rm = T)) %>% ungroup() %>%
+        gather(Heavy, Medium, Light, key = SmokeDensity, value = PersonDays) %>%
+        mutate(SmokeDensity = factor(SmokeDensity, levels = c("Light","Medium","Heavy")))
         
        
    })
