@@ -3,7 +3,7 @@ rm(list = ls())
 library(tidyverse)
 library(sf)
 
-dateList <- format(seq(as.Date("2018/08/13"),as.Date("2018/08/14"), by = "day"),"%Y%m%d")
+dateList <- format(seq(as.Date("2018/01/29"),as.Date("2018/08/20"), by = "day"),"%Y%m%d")
 
 # smokeFileZip <- "http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/GIS/ARCHIVE/hms_smoke20180808.zip"
 CAtracts <-  st_read(dsn = "~/GitHub/WFSmokeExp/SmokeExposures/tractsSM.GeoJSON", stringsAsFactors = F) %>% st_transform(crs = 4326) %>%
@@ -59,31 +59,94 @@ for (day in dateList){
  
 }
 
-saveRDS(AllDays,file = "~/GitHub/WFSmokeExp/Aug13ToAug142018.rds")
+saveRDS(AllDays,file = "~/GitHub/WFSmokeExp/Aug16ToAug202018.rds")
 
-AllData <- readRDS(file = "~/GitHub/WFSmokeExp/Jan29ToAug152018_2.rds") %>%
+temp1 <- bind_rows(readRDS("~/GitHub/WFSmokeExp/Jan29ToAug152018_2.rds"), readRDS("~/GitHub/WFSmokeExp/Aug16ToAug202018.rds"))
+
+saveRDS(temp1,file = "~/GitHub/WFSmokeExp/Jan29ToAug202018.rds")
+
+AllData <- readRDS(file = "~/GitHub/WFSmokeExp/Jan29ToAug202018.rds") %>%
   mutate(date = as.Date(paste0(year, month, day), format= "%Y%m%d"))
 
 
+
 length(seq(as.Date("2018/08/13"),as.Date("2018/08/14"), by = "day"))
-dateList <- c(as.Date("2018-08-12"), as.Date("2018-08-13"))
+dateList2 <- c(as.Date("2018-08-12"), as.Date("2018-08-13"))
 
 
-SmokeDaysByTract <- 
-  AllData %>% 
+################ create last 2 weeks table #################
+
+start <- as.Date(dateList[length(dateList)-14],"%Y%m%d")
+end <- as.Date(dateList[length(dateList)],"%Y%m%d")
+
+ AllData %>% 
     filter(
-      as.Date(date) >= as.character(dateList[1]) &
-        as.Date(date) <= as.character(dateList[2])
+      as.Date(date) > as.character(start) &
+        as.Date(date) <= as.character(end)
     ) %>%
     mutate(smoke = factor(ifelse(smoke == "Smoke (Light)", "light", 
                                ifelse(smoke == "Smoke (Heavy)","heavy", "medium")), levels=c("light","medium","heavy"))) %>%   
     group_by(smoke, ct10) %>%
     summarize(NumberOfDays = length(unique(date))) %>%
     ungroup() %>% 
-    spread(key = smoke,value = NumberOfDays) 
+    spread(key = smoke,value = NumberOfDays) %>% saveRDS("~/GitHub/WFSmokeExp/SmokeExposures/last2weeks.RDS")
 
   
-library(leaflet)
+  
+################ create last 30 days table #################
+  
+  start <- as.Date(dateList[length(dateList)-30],"%Y%m%d")
+  end <- as.Date(dateList[length(dateList)],"%Y%m%d")
+  
+  AllData %>% 
+    filter(
+      as.Date(date) > as.character(start) &
+        as.Date(date) <= as.character(end)
+    ) %>%
+    mutate(smoke = factor(ifelse(smoke == "Smoke (Light)", "light", 
+                                 ifelse(smoke == "Smoke (Heavy)","heavy", "medium")), levels=c("light","medium","heavy"))) %>%   
+    group_by(smoke, ct10) %>%
+    summarize(NumberOfDays = length(unique(date))) %>%
+    ungroup() %>% 
+    spread(key = smoke,value = NumberOfDays) %>% saveRDS("~/GitHub/WFSmokeExp/SmokeExposures/last30days.RDS")
+  
+  
+  
+  ################ create last 2 months table #################
+  
+  start <- as.Date(dateList[length(dateList)-60],"%Y%m%d")
+  end <- as.Date(dateList[length(dateList)],"%Y%m%d")
+  
+  AllData %>% 
+    filter(
+      as.Date(date) > as.character(start) &
+        as.Date(date) <= as.character(end)
+    ) %>%
+    mutate(smoke = factor(ifelse(smoke == "Smoke (Light)", "light", 
+                                 ifelse(smoke == "Smoke (Heavy)","heavy", "medium")), levels=c("light","medium","heavy"))) %>%   
+    group_by(smoke, ct10) %>%
+    summarize(NumberOfDays = length(unique(date))) %>%
+    ungroup() %>% 
+    spread(key = smoke,value = NumberOfDays) %>% saveRDS("~/GitHub/WFSmokeExp/SmokeExposures/last2months.RDS")
+  
+
+
+######## filter tract by date range ####################
+
+SmokeDaysByTract <- 
+  AllData %>% 
+  filter(
+    as.Date(date) >= as.character(dateList2[1]) &
+      as.Date(date) <= as.character(dateList2[2])
+  ) %>%
+  mutate(smoke = factor(ifelse(smoke == "Smoke (Light)", "light", 
+                               ifelse(smoke == "Smoke (Heavy)","heavy", "medium")), levels=c("light","medium","heavy"))) %>%   
+  group_by(smoke, ct10) %>%
+  summarize(NumberOfDays = length(unique(date))) %>%
+  ungroup() %>% 
+  spread(key = smoke,value = NumberOfDays) 
+
+
 
 CAtracts <-  st_read(dsn = "~/GitHub/WFSmokeExp/SmokeExposures/tractsSM.GeoJSON", stringsAsFactors = F) %>% st_transform(crs = 4326) %>%
   mutate(COUNTYFI_1 = as.character(paste0(STATE, COUNTY)))
@@ -92,7 +155,64 @@ dateList
 
 
 
-#################### mapping #######################
+
+###### create the vulnerable peoples table ###########
+
+children <- read.csv("~/CHVI_copy/data/tables/tracts/CHVI_children_tract.csv", header = T, stringsAsFactors = F) %>% 
+  select(geotypv, numratr, denmntr, race) %>% 
+  rename(ct10 = geotypv, 
+         children = numratr, 
+         total = denmntr)
+
+elderly <- read.csv("~/CHVI_copy/data/tables/tracts/CHVI_elderly_tract.csv", header = T, stringsAsFactors = F) %>% 
+  select(geotypv, numratr, denmntr, race) %>% 
+  rename(ct10 = geotypv, 
+         elderly = numratr, 
+         total = denmntr)
+
+vuln <- inner_join(children, elderly) %>% 
+  mutate(other = total - children - elderly) %>%
+  gather(children, elderly, other, total, key = cohort, value = population)
+
+
+vuln %>% saveRDS("~/GitHub/WFSmokeExp/SmokeExposures/vuln.rds")
+
+
+##### Create SmokeByDay file for timeline plot #######
+
+
+SmokeByDay <- 
+  AllData %>% 
+  # filter(
+  #   as.Date(date) >= as.character(dateList[1]) &
+  #     as.Date(date) <= as.character(dateList[2])
+  # ) %>%
+  mutate(smoke = factor(ifelse(smoke == "Smoke (Light)", "light", 
+                               ifelse(smoke == "Smoke (Heavy)","heavy", "medium")), levels=c("light","medium","heavy"))) %>%
+  select(smoke, ct10, date) %>% inner_join({
+    readRDS("~/GitHub/WFSmokeExp/SmokeExposures/vuln.rds") %>% 
+      mutate(ct10 = paste0("0",as.character(as.numeric(ct10)))) %>%
+      filter(race == "Total") %>%
+      spread(key = cohort, value = population) %>%
+      select(-race, )
+  }) %>%
+  group_by(ct10, date, smoke) %>%
+  summarize(Persons = mean(total, na.rm=T)) %>%
+  group_by(smoke, date) %>%
+  summarize(Persons = sum(Persons, na.rm=T)) 
+
+SmokeByDay %>% saveRDS(SmokeByDay, "~/GitHub/WFSmokeExp/SmokeExposures/SmokeByDay.RDS")
+
+
+
+
+
+
+
+
+#################### mapping and testing outside shiny #######################
+library(leaflet)
+
 
 pal_l <- colorBin(palette =  "Reds",
                   bins = 7,
@@ -178,26 +298,10 @@ mapTemp %>%
     options = layersControlOptions(collapsed = TRUE)
   )
 
-children <- read.csv("~/CHVI_copy/data/tables/tracts/CHVI_children_tract.csv", header = T, stringsAsFactors = F) %>% 
-  select(geotypv, numratr, denmntr, race) %>% 
-  rename(ct10 = geotypv, 
-         children = numratr, 
-         total = denmntr)
-  
-elderly <- read.csv("~/CHVI_copy/data/tables/tracts/CHVI_elderly_tract.csv", header = T, stringsAsFactors = F) %>% 
-  select(geotypv, numratr, denmntr, race) %>% 
-  rename(ct10 = geotypv, 
-         elderly = numratr, 
-         total = denmntr)
 
 
 
-
-vuln <- inner_join(children, elderly) %>% 
-  mutate(other = total - children - elderly) %>%
-  gather(children, elderly, other, total, key = cohort, value = population) %>% 
-  saveRDS("~/GitHub/WFSmokeExp/SmokeExposures/vuln.rds")
-
+################# test person-day plot outside shiny ############
 
 library(plotly)
 
@@ -219,25 +323,34 @@ library(plotly)
 
 
 
-  
-SmokeByDay <- 
-    AllData %>% 
-    # filter(
-    #   as.Date(date) >= as.character(dateList[1]) &
-    #     as.Date(date) <= as.character(dateList[2])
-    # ) %>%
-  mutate(smoke = factor(ifelse(smoke == "Smoke (Light)", "light", 
-                               ifelse(smoke == "Smoke (Heavy)","heavy", "medium")), levels=c("light","medium","heavy"))) %>%
-  select(smoke, ct10, date) %>% inner_join({
-      vuln %>% 
-        mutate(ct10 = paste0("0",as.character(as.numeric(ct10)))) %>%
-        filter(race == "Total") %>%
-        spread(key = cohort, value = population) %>%
-        select(-race, )
-      }) %>%
-  group_by(ct10, date, smoke) %>%
-  summarize(Persons = mean(total, na.rm=T)) %>%
-  group_by(smoke, date) %>%
-  summarize(Persons = sum(Persons, na.rm=T))
 
-SmokeByDay %>% ggplot(aes(x = date, y= Persons/1000000, fill = smoke)) + geom_area(position = "dodge") + ylab("Millions of People \n (Pop of CA shown dashed)") + xlab("Date") + geom_hline(yintercept = 37.25, color = "red", linetype="dashed")
+
+
+############ TEst TImeline plot outside shiny #################
+
+SmokeByDay %>% ggplot() + 
+  geom_area(aes(x = date, y= Persons/1000000, fill = smoke), position = "dodge") + 
+  ylab("Millions of People") + xlab("Date") + 
+  geom_hline(yintercept = 37.25, color = "red", linetype="dashed") + 
+  geom_label(aes(x = as.Date("2018-05-01"),y = 37.25, label="Total CA Population")) + 
+  geom_vline(xintercept = as.Date("2018-07-27"), color = "gray20", linetype="twodash") + 
+  geom_label(aes(x = as.Date("2018-07-27"),y = 35, label="Mendocino Complex Start", hjust="right")) +
+  geom_vline(xintercept = as.Date("2018-07-23"), color = "gray20", linetype="dotdash") + 
+  geom_label(aes(x = as.Date("2018-07-23"),y = 32, label="Carr Fire Start", hjust="right")) +
+  geom_vline(xintercept = as.Date("2018-07-13"), color = "gray20", linetype="longdash") + 
+  geom_label(aes(x = as.Date("2018-07-13"),y = 29, label="Ferguson Fire Start", hjust="right"))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
