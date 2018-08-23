@@ -28,7 +28,7 @@ CAtracts <-  st_read(dsn = "tractsSM.GeoJSON", stringsAsFactors = F) %>% st_tran
 ui <- dashboardPage(
     dashboardHeader(title = "Wildfire Smoke"),
     dashboardSidebar(sidebarMenu(
-      menuItem("Background", tabName = "back", icon = icon("th")),
+      menuItem("Introduction", tabName = "intro", icon = icon("th")),
         menuItem(
             "Wildfire Smoke",
             tabName = "smokeDash",
@@ -43,7 +43,7 @@ ui <- dashboardPage(
                 
                 fluidRow(
                     box(
-                        title = "California Wildfire Smoke Expousres",
+                        title = "California Wildfire Smoke Exposures",
                         collapsible = TRUE,
                         collapsed = F,
                         leafletOutput("HMLdaysMap", height = 700)
@@ -95,7 +95,7 @@ ui <- dashboardPage(
         
         
         # second Tab Content
-        tabItem(tabName = "back",
+        tabItem(tabName = "intro",
                 HTML("<h4>The Wildfire Smoke data on this dashboard comes from the Nation Oceanic and Atmospheric Administration's Office of Satellite and Product Operations. </h4>
 <h6>The NOAA Smoke and Fire Products can be found <a href='https://www.ospo.noaa.gov/Products/land/hms.html' target='_blank'> at their website</a>. </h6> 
 <ul>

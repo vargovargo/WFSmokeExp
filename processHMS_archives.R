@@ -9,7 +9,7 @@ dateList <- format(seq(as.Date("2010/01/01"),as.Date("2010/12/31"), by = "day"),
 CAtracts <-  st_read(dsn = "~/GitHub/WFSmokeExp/SmokeExposures/tractsSM.GeoJSON", stringsAsFactors = F) %>% st_transform(crs = 4326) %>%
   mutate(COUNTYFI_1 = as.character(paste0(STATE, COUNTY)))
 
-# HMSday <- dateList[1]
+HMSday <- dateList[1]
 
 smokeDay <- function(HMSday){
   
@@ -17,11 +17,11 @@ smokeDay <- function(HMSday){
       month <- substr(HMSday, 5,6)
       day <- substr(HMSday, 7,8)
         
-      smokeFileName <- paste0("http://satepsanone.nesdis.noaa.gov/pub/volcano/FIRE/HMS_ARCHIVE/",year,"/KML/smoke",HMSday,".kml.gz")
+      tarFileName <- paste0("http://satepsanone.nesdis.noaa.gov/pub/volcano/FIRE/HMS_ARCHIVE/",year,"/KML/smoke",HMSday,".kml.gz")
+      smokeFileName <- paste0("smoke",HMSday,".kml")
       
-      readLines(gzfile(smokeFileName))
       
-      layers <- st_layers(gzfile(smokeFileName, 'rb'))$name
+      layers <- st_layers(untar(tarfile = tarFileName,files = smokeFileName  ))$name
       
       for(l in 1: length(layers)){
       
