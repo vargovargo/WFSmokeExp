@@ -2,62 +2,116 @@ rm(list = ls())
 
 library(tidyverse)
 library(sf)
+library(parallel)
 
-dateList <- format(seq(as.Date("2018/01/29"),as.Date("2018/08/20"), by = "day"),"%Y%m%d")
 
-# smokeFileZip <- "http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/GIS/ARCHIVE/hms_smoke20180808.zip"
-CAtracts <-  st_read(dsn = "~/GitHub/WFSmokeExp/SmokeExposures/tractsSM.GeoJSON", stringsAsFactors = F) %>% st_transform(crs = 4326) %>%
-  mutate(COUNTYFI_1 = as.character(paste0(STATE, COUNTY)))
+# testing the function
+# HMSday <- "20180301"
+# spatialFile <- UScounty
+# l = 1
 
-smokeDay <- function(HMSday){
+intersectHMS <- function(HMSday){
   
-      year <- substr(HMSday, 1,4)
-      month <- substr(HMSday, 5,6)
-      day <- substr(HMSday, 7,8)
-        
-      smokeFileName <- paste0("http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/KML/ARCHIVE/smoke",HMSday,".kml")
-      
-      layers <- st_layers(smokeFileName)$name
+  layers <- st_layers(paste0("http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/KML/ARCHIVE/smoke",HMSday,".kml"))$name
+  
+  for(l in 1: length(layers)){
+    
+    Smk <- st_read(dsn = paste0("http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/KML/ARCHIVE/smoke",HMSday,".kml"), layer = layers[l]) %>%
+      mutate(year = substr(HMSday, 1,4),
+             month = substr(HMSday, 5,6),
+             day = substr(HMSday, 7,8),
+             date = paste0(year, month, day),
+             smoke = layers[l])
+    
+    SmkLayerDayInt <- st_intersection(Smk,spatialFile) %>%
+      select(date, smoke, geoIDer)
+    
+    st_geometry(SmkLayerDayInt) <- NULL
+    
+    if(exists("singleDay")){
+      singleDay <- rbind(singleDay, SmkLayerDayInt)
+    }
+    else {
+      singleDay <- SmkLayerDayInt
+    }
+    
+  }
+  
+  singleDay  %>%
+    saveRDS(paste0("~/data/CA_tracts/CA_WF_tracts_data_",HMSday,".RDS"))
+  
+
+  
+}
+
+############### end first function #########
+
+dateList <- format(seq(as.Date("2018/08/20"),as.Date("2018/09/01"), by = "day"),"%Y%m%d")
+
+spatialFile <-  st_read(dsn = "~/GitHub/WFSmokeExp/SmokeExposures/tractsSM.GeoJSON", stringsAsFactors = F) %>% 
+  st_transform(crs = 4326) %>%   
+  mutate(COUNTYFI_1 = as.character(paste0(STATE, COUNTY))) %>%
+  rename(geoIDer = ct10)
+
+mclapply(dateList, FUN = intersectHMS)
+
+
+
+# HMSday <- "20180301"
+# spatialFile <- CAtracts
+# l = 1
+
+
+intersectHMS <- function(HMSday, spatialFile= "CAtracts"){
+  
+      layers <- st_layers(paste0("http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/KML/ARCHIVE/smoke",HMSday,".kml"))$name
       
       for(l in 1: length(layers)){
       
-        Smk <- st_read(dsn = smokeFileName, layer = layers[l]) %>%
-          mutate(year = year,
-                 month = month,
-                 day = day,
+        Smk <- st_read(dsn = paste0("http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/KML/ARCHIVE/smoke",HMSday,".kml"), layer = layers[l]) %>%
+          mutate(year = substr(HMSday, 1,4),
+                 month = substr(HMSday, 5,6),
+                 day = substr(HMSday, 7,8),
                  date = paste0(year, month, day),
                  smoke = layers[l])
         
-        SmkLayerDayInt <- st_intersection(Smk, CAtracts) 
+        SmkLayerDayInt <- st_intersection(Smk,spatialFile) %>%
+          select(date, smoke, ct10) 
         st_geometry(SmkLayerDayInt) <- NULL
-        # Smk <-Smk %>% select(date, year, month, day, smoke, ct10) %>%
-          
       
+        
         if(exists("singleDay")){
           singleDay <- rbind(singleDay, SmkLayerDayInt)
         }
-        else{
+        else {
           singleDay <- SmkLayerDayInt
         }
       
       }
       
+      singleDay %>%
+        saveRDS(paste0("~/data/CA_WF_tracts_data_",HMSday,".RDS"))
+      
+       
     return(singleDay)
       
 }
+
+
+lapply(dateList, FUN = intersectHMS)
       
-for (day in dateList){
-  
- oneDay <- smokeDay(HMSday = day) 
- 
- if(exists("AllDays")){
-   AllDays <- rbind(AllDays, oneDay)
- }
- else{
-   AllDays <- oneDay
- } 
- 
-}
+# for (day in dateList){
+#   
+#  oneDay <- smokeDay(HMSday = day) 
+#  
+#  if(exists("AllDays")){
+#    AllDays <- rbind(AllDays, oneDay)
+#  }
+#  else{
+#    AllDays <- oneDay
+#  } 
+#  
+# }
 
 saveRDS(AllDays,file = "~/GitHub/WFSmokeExp/Aug16ToAug202018.rds")
 
