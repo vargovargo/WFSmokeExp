@@ -28,12 +28,17 @@ CAtracts <-  st_read(dsn = "tractsSM.GeoJSON", stringsAsFactors = F) %>% st_tran
 ui <- dashboardPage(
     dashboardHeader(title = "Wildfire Smoke"),
     dashboardSidebar(sidebarMenu(
-      menuItem("Background", tabName = "back", icon = icon("th")),
+      menuItem("Background", tabName = "back", icon = icon("info")),
         menuItem(
-            "Wildfire Smoke",
+            "CA Wildfire Smoke",
             tabName = "smokeDash",
-            icon = icon("dashboard")
-        )
+            icon = icon("fire")
+        ),
+      menuItem(
+        "Policies / Actions",
+        tabName = "actions",
+        icon = icon("exclamation-circle")
+      )
 
     )),
     dashboardBody(tabItems(
@@ -97,10 +102,16 @@ ui <- dashboardPage(
                 
         
         
-        # second Tab Content
+        # background Tab Content
         tabItem(tabName = "back",
                 
-                HTML("<h2>This dashboard brings together information from the Nation Oceanic and Atmospheric Administration (NOAA) on wildfire smoke intensity and coverage (left) and information about California populations -- including populations most sensitive to smoke exposures -- (right), in order to get a more complete picture of wildfire smoke exposures in the state.</h2>"),
+                HTML("<h2>This dashboard brings together information from the Nation Oceanic and Atmospheric Administration (NOAA) on wildfire smoke intensity and coverage (left) and information about California populations -- including populations most sensitive to smoke exposures -- (right), in order to get a more complete picture of wildfire smoke exposures in the state.</h2>
+                     <h4>Recent Supporting Evidence on Population Vulnerability to Wildfire Smoke Exposures</h4>
+                     <ul>
+                     <li><a href='https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6015400/pdf/JAH3-7-e007492.pdf'>Cardiovascular and Cerebrovascular Emergency Department Visits Associated With Wildfire Smoke Exposure in California in 2015</a></li>
+                     <li><a href='https://journals.plos.org/plosmedicine/article?id=10.1371/journal.pmed.1002601'>The San Diego 2007 wildfires and Medi-Cal emergency department presentations, inpatient hospitalizations, and outpatient visits: An observational study of smoke exposure periods and a bidirectional case-crossover analysis</a></li>
+                
+                     </ul>"),
                 
          # wild fire smoke product box
                 box(title = "Wildfire Smoke Data",
@@ -111,15 +122,12 @@ ui <- dashboardPage(
 <li>The fire sizes depicted in the product are primarily determined by the field of view of the satellite instrument, or the resolution of the analysis tool. They should not be used to estimate specific fire perimeters.</li>
 <li>The ability to detect fires and smoke can be compromised by many factors, including cloud cover, tree canopy, terrain, the size of the fire or smoke plume, the time of the day, etc. The satellite sensors used to detect fires are sensitive to heat sources and reflected sunlight. Analysts do their best to distinguish between fires and other heat sources or highly reflective surfaces, such as factories, mines, gas flares, solar panels, clouds, etc. but some false detects do get included in the analysis.</li></ul> 
                      
-<h4>Technical documentation of the HMS products</h4>
+<h4>Technical Documentation of the HMS Products</h4>
                      <ul>
                      <li><a href='https://www.researchgate.net/profile/Mark_Ruminski/publication/252456636_Use_of_multiple_satellite_sensors_in_NOAA%27s_operational_near_real-time_fire_and_smoke_detection_and_characterization_program/links/5498d67a0cf2c5a7e342c6e8.pdf'>Use of multiple satellite sensors in NOAA's operational near real-time fire and smoke detection and characterization program </a></li>
                      <li><a href='https://journals.ametsoc.org/doi/pdf/10.1175/2008WAF2222165.1'>Description and Verification of the NOAA Smoke Forecasting System: The 2007 Fire Season</a></li>
                 
                      </ul>
-
-
-
 
                      <h4>View the latest Fire and Smoke in Goolge Earth </h4>
                      <ul>
@@ -133,25 +141,19 @@ ui <- dashboardPage(
                 box(title = "California Vulnerable Population Data",
                     HTML("<h4>California population data come from the California Department of Public Health's <a href='https://discovery.cdph.ca.gov/ohe/CCHVIz/' target='_blank'>Climate Change & Health Vulnerability Indicators (CCHVIs)</a>.</h4>
 
-To quanitfy person days of smoke, HMS daily light, medium, and heavy smoke plumes were intersected with California Census Tracts. Population data for 2010 were used to calculate the number of people exposed to various levels of smoke. Children includes those aged under 5 while elderly includes individuals aged 65 and over.
-
-<h4>Recent Supporting Evidence on Populatino Vulnerability to Wildfire Smoike exposures</h4>
-                     <ul>
-                     <li><a href='https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6015400/pdf/JAH3-7-e007492.pdf'>Cardiovascular and Cerebrovascular Emergency Department Visits Associated With Wildfire Smoke Exposure in California in 2015</a></li>
-                     <li><a href='https://journals.plos.org/plosmedicine/article?id=10.1371/journal.pmed.1002601'>The San Diego 2007 wildfires and Medi-Cal emergency department presentations, inpatient hospitalizations, and outpatient visits: An observational study of smoke exposure periods and a bidirectional case-crossover analysis</a></li>
-                
-                     </ul>")
+To quantify person days of smoke, HMS daily light, medium, and heavy smoke plumes were intersected with California Census Tracts. Population data for 2010 were used to calculate the number of people exposed to various levels of smoke. Children includes those aged under 5 while elderly includes individuals aged 65 and over.")
                     
                 )
-                
-                
-                
-                
                 # , 
                 # textOutput("text"),
                 # tableOutput("table")
                 # 
-                ))
+                ),
+        tabItem(tabName = "actions",
+                HTML("<h4>Under Construction</h4>")
+                
+        )
+        )
     ))
 
 
