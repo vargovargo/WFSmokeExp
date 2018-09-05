@@ -46,7 +46,7 @@ intersectHMS <- function(HMSday){
 
 ############### end first function #########
 
-dateList <- format(seq(as.Date("2018/08/20"),as.Date("2018/09/01"), by = "day"),"%Y%m%d")
+dateList <- format(seq(as.Date("2018/06/01"),as.Date("2018/09/01"), by = "day"),"%Y%m%d")
 
 spatialFile <-  st_read(dsn = "~/GitHub/WFSmokeExp/SmokeExposures/tractsSM.GeoJSON", stringsAsFactors = F) %>% 
   st_transform(crs = 4326) %>%   
@@ -57,61 +57,8 @@ mclapply(dateList, FUN = intersectHMS)
 
 
 
-# HMSday <- "20180301"
-# spatialFile <- CAtracts
-# l = 1
 
 
-intersectHMS <- function(HMSday, spatialFile= "CAtracts"){
-  
-      layers <- st_layers(paste0("http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/KML/ARCHIVE/smoke",HMSday,".kml"))$name
-      
-      for(l in 1: length(layers)){
-      
-        Smk <- st_read(dsn = paste0("http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/KML/ARCHIVE/smoke",HMSday,".kml"), layer = layers[l]) %>%
-          mutate(year = substr(HMSday, 1,4),
-                 month = substr(HMSday, 5,6),
-                 day = substr(HMSday, 7,8),
-                 date = paste0(year, month, day),
-                 smoke = layers[l])
-        
-        SmkLayerDayInt <- st_intersection(Smk,spatialFile) %>%
-          select(date, smoke, ct10) 
-        st_geometry(SmkLayerDayInt) <- NULL
-      
-        
-        if(exists("singleDay")){
-          singleDay <- rbind(singleDay, SmkLayerDayInt)
-        }
-        else {
-          singleDay <- SmkLayerDayInt
-        }
-      
-      }
-      
-      singleDay %>%
-        saveRDS(paste0("~/data/CA_WF_tracts_data_",HMSday,".RDS"))
-      
-       
-    return(singleDay)
-      
-}
-
-
-lapply(dateList, FUN = intersectHMS)
-      
-# for (day in dateList){
-#   
-#  oneDay <- smokeDay(HMSday = day) 
-#  
-#  if(exists("AllDays")){
-#    AllDays <- rbind(AllDays, oneDay)
-#  }
-#  else{
-#    AllDays <- oneDay
-#  } 
-#  
-# }
 
 saveRDS(AllDays,file = "~/GitHub/WFSmokeExp/Aug16ToAug202018.rds")
 
@@ -130,8 +77,14 @@ dateList2 <- c(as.Date("2018-08-12"), as.Date("2018-08-13"))
 
 ################ create last 2 weeks table #################
 
+dateList <- format(seq(as.Date("2018/06/01"),as.Date("2018/09/01"), by = "day"),"%Y%m%d")
+
+
 start <- as.Date(dateList[length(dateList)-14],"%Y%m%d")
 end <- as.Date(dateList[length(dateList)],"%Y%m%d")
+
+
+
 
  AllData %>% 
     filter(

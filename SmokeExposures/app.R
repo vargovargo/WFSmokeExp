@@ -135,7 +135,7 @@ ui <- dashboardPage(
 
 To quanitfy person days of smoke, HMS daily light, medium, and heavy smoke plumes were intersected with California Census Tracts. Population data for 2010 were used to calculate the number of people exposed to various levels of smoke. Children includes those aged under 5 while elderly includes individuals aged 65 and over.
 
-<h4>Recent  SUpporting Evidence on Populatino Vulnerability to Wildfire Smoike exposures</h4>
+<h4>Recent Supporting Evidence on Populatino Vulnerability to Wildfire Smoike exposures</h4>
                      <ul>
                      <li><a href='https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6015400/pdf/JAH3-7-e007492.pdf'>Cardiovascular and Cerebrovascular Emergency Department Visits Associated With Wildfire Smoke Exposure in California in 2015</a></li>
                      <li><a href='https://journals.plos.org/plosmedicine/article?id=10.1371/journal.pmed.1002601'>The San Diego 2007 wildfires and Medi-Cal emergency department presentations, inpatient hospitalizations, and outpatient visits: An observational study of smoke exposure periods and a bidirectional case-crossover analysis</a></li>
@@ -450,8 +450,6 @@ server <- function(input, output) {
    })
    
    
-   
-   
    ##################### TIme Series plot #################################
    
    output$TimePlot <- renderPlot({
@@ -477,7 +475,13 @@ server <- function(input, output) {
     # 
     # output$text <- renderText(paste0("number of days in the period you selected: ",length(dateList())))
     # 
-    
+   
+   options(bitmapType='cairo')
+ 
+   outputOptions(output, "HMLdaysMap", suspendWhenHidden = FALSE)
+   outputOptions(output, "VulnPlot", suspendWhenHidden = FALSE)
+   outputOptions(output, "TimePlot", suspendWhenHidden = FALSE)
+   
     }
 
 shinyApp(ui, server)
