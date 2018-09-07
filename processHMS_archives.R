@@ -3,8 +3,11 @@ rm(list = ls())
 library(tidyverse)
 library(sf)
 library(parallel)
+library(R.utils)
+library(lwgeom)
+library(RCurl)
 
-HMSday = dateList[1]
+HMSday <-"20100911"
 
 intersectHMSarchive <- function(HMSday){
   
@@ -12,33 +15,39 @@ intersectHMSarchive <- function(HMSday){
   month <- substr(HMSday, 5,6)
   day <- substr(HMSday, 7,8)
   
-  tarFileURL <- paste0("http://satepsanone.nesdis.noaa.gov/pub/volcano/FIRE/HMS_ARCHIVE/",year,"/KML/smoke",HMSday,".kml.gz")
+  gzFileURL <- paste0("http://satepsanone.nesdis.noaa.gov/pub/volcano/FIRE/HMS_ARCHIVE/",year,"/KML/smoke",HMSday,".kml.gz")
+  if(url.exists(gzFileURL)){
+  
+  smokeZipName <- paste0("smoke",HMSday,".kml.gz")
   smokeFileName <- paste0("smoke",HMSday,".kml")
   
-  rootgz <- basename(tarFileURL)
+  directory <- tempdir()
   
-  temp <- tempfile()
-  download.file(url = tarFileURL, destfile = temp)
+  setwd(directory)
   
-   gzcon(url(tarFileURL),) 
- 
-  untar(tarfile = tarFileName)
+  temp <- tempfile(pattern = "", fileext = ".kml.gz")
   
-st_layers(foo)
-    
-  layers <- st_layers(paste0("http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/KML/ARCHIVE/smoke",HMSday,".kml"))$name
+  download.file(url = gzFileURL, destfile = temp)
+  
+  gunzip(temp)
+  
+  kmlFile <- list.files(tempdir(), pattern = ".kml")
+  
+  layers <- st_layers(kmlFile)$name
   
   for(l in 1: length(layers)){
     
-    Smk <- st_read(dsn = paste0("http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/KML/ARCHIVE/smoke",HMSday,".kml"), layer = layers[l]) %>%
+    Smk <- st_read(dsn = kmlFile, layer = layers[l]) %>%
       mutate(year = substr(HMSday, 1,4),
              month = substr(HMSday, 5,6),
              day = substr(HMSday, 7,8),
              date = paste0(year, month, day),
-             smoke = layers[l])
+             smoke = layers[l],
+             Desc = Description
+             )
     
-    SmkLayerDayInt <- st_intersection(Smk,spatialFile) %>%
-      select(date, smoke, geoIDer)
+     SmkLayerDayInt <- st_intersection(st_make_valid(Smk),spatialFile) %>%
+      select(date, smoke, Desc, geoIDer)
     
     st_geometry(SmkLayerDayInt) <- NULL
     
@@ -51,84 +60,111 @@ st_layers(foo)
     
   }
   
+  # singleDay  %>%
+  #   saveRDS(paste0("~/data/CA_tracts/CA_WF_tracts_data_",HMSday,".RDS"))
+
   singleDay  %>%
-    saveRDS(paste0("~/data/CA_tracts/CA_WF_tracts_data_",HMSday,".RDS"))
+    saveRDS(paste0("~/data/US_counties/US_WF_counties_data_",HMSday,".RDS"))
   
+  unlink(paste0(tempdir(),'/*'))
+  }
+  else{
+    return()
+  }
+
+}
+
+
+intersectHMS <- function(HMSday){
   
+  KMLurl <- paste0("http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/KML/ARCHIVE/smoke",HMSday,".kml")
+  
+  if(url.exists(KMLurl)){
+  
+  layers <- st_layers()$name
+  
+  for(l in 1: length(layers)){
+    
+    Smk <- st_read(dsn = paste0("http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/KML/ARCHIVE/smoke",HMSday,".kml"), layer = layers[l]) %>%
+      mutate(year = substr(HMSday, 1,4),
+             month = substr(HMSday, 5,6),
+             day = substr(HMSday, 7,8),
+             date = paste0(year, month, day),
+             smoke = layers[l],
+             Desc = Description)
+    
+    SmkLayerDayInt <- st_intersection(st_make_valid(Smk),spatialFile) %>%
+      select(date, smoke, Desc, geoIDer)
+    
+    st_geometry(SmkLayerDayInt) <- NULL
+    
+    if(exists("singleDay")){
+      singleDay <- rbind(singleDay, SmkLayerDayInt)
+    }
+    else {
+      singleDay <- SmkLayerDayInt
+    }
+    
+  }
+  
+  # singleDay  %>%
+  #   saveRDS(paste0("~/data/CA_tracts/CA_WF_tracts_data_",HMSday,".RDS"))
+  
+  singleDay  %>%
+    saveRDS(paste0("~/data/US_counties/US_WF_counties_data_",HMSday,".RDS"))
+  
+  }
+  else{
+    return()
+  }
   
 }
+
 
 ############### end first function #########
 
-dateList <- format(seq(as.Date("2010/01/01"),as.Date("2010/12/31"), by = "day"),"%Y%m%d")
+############### run multiple intersects #########
 
-spatialFile <-  st_read(dsn = "~/GitHub/WFSmokeExp/SmokeExposures/tractsSM.GeoJSON", stringsAsFactors = F) %>% 
-  st_transform(crs = 4326) %>%   
-  mutate(COUNTYFI_1 = as.character(paste0(STATE, COUNTY))) %>%
-  rename(geoIDer = ct10)
+dateList <- format(seq(as.Date("2010/09/10"),as.Date("2010/09/12"), by = "day"),"%Y%m%d")
 
-mclapply(dateList, FUN = intersectHMS)
+# spatialFile <-  st_read(dsn = "~/GitHub/WFSmokeExp/SmokeExposures/tractsSM.GeoJSON", stringsAsFactors = F) %>%
+#   st_transform(crs = 4326) %>%
+#   mutate(COUNTYFI_1 = as.character(paste0(STATE, COUNTY))) %>%
+#   rename(geoIDer = ct10)
+
+spatialFile <-  st_read(dsn = "~/GitHub/WFSmokeExp_US/cb_2017_us_county_20m.kml", stringsAsFactors = F) %>% st_transform(crs = 4326) %>%
+  mutate(County = sapply(str_split(Name, pattern = "[<>]+"), "[[",4),
+         CountyFIPS = sapply(str_split(Description, pattern = "[<>]+"), "[[", 62))  %>%
+  rename(geoIDer = CountyFIPS)
+
+mclapply(dateList, FUN = intersectHMSarchive)
 
 
+########### function to combine ############
 
-dateList <- format(seq(as.Date("2010/01/01"),as.Date("2010/12/31"), by = "day"),"%Y%m%d")
 
-# smokeFileZip <- "http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/GIS/ARCHIVE/hms_smoke20180808.zip"
-CAtracts <-  st_read(dsn = "~/GitHub/WFSmokeExp/SmokeExposures/tractsSM.GeoJSON", stringsAsFactors = F) %>% st_transform(crs = 4326) %>%
-  mutate(COUNTYFI_1 = as.character(paste0(STATE, COUNTY)))
+oneyearFiles <- list.files("~/data/US_counties/", full.names = T)
 
-HMSday <- dateList[1]
+file <- oneyearFiles[253]
+foo <- readRDS("~/data/US_counties/US_WF_counties_data_20100911.RDS")
 
-smokeDay <- function(HMSday){
+head(foo)
+unique(foo$smoke)
+
+head({foo %>%
+    mutate(test = str_extract_all(smoke, pattern = ""))
+})
   
-      year <- substr(HMSday, 1,4)
-      month <- substr(HMSday, 5,6)
-      day <- substr(HMSday, 7,8)
-        
-      tarFileName <- paste0("http://satepsanone.nesdis.noaa.gov/pub/volcano/FIRE/HMS_ARCHIVE/",year,"/KML/smoke",HMSday,".kml.gz")
-      smokeFileName <- paste0("smoke",HMSday,".kml")
-      
-      
-      layers <- st_layers(untar(tarfile = tarFileName,files = smokeFileName  ))$name
-      
-      for(l in 1: length(layers)){
-      
-        Smk <- st_read(dsn = smokeFileName, layer = layers[l]) %>%
-          mutate(year = year,
-                 month = month,
-                 day = day,
-                 date = paste0(year, month, day),
-                 smoke = layers[l])
-        
-        SmkLayerDayInt <- st_intersection(Smk, CAtracts) 
-        st_geometry(SmkLayerDayInt) <- NULL
-        # Smk <-Smk %>% select(date, year, month, day, smoke, ct10) %>%
-          
-      
-        if(exists("singleDay")){
-          singleDay <- rbind(singleDay, SmkLayerDayInt)
-        }
-        else{
-          singleDay <- SmkLayerDayInt
-        }
-      
-      }
-      
-    return(singleDay)
-      
-}
-      
-for (day in dateList){
+regexp <- "[[:digit:]]+"
   
- oneDay <- smokeDay(HMSday = day) 
- 
- if(exists("AllDays")){
-   AllDays <- rbind(AllDays, oneDay)
- }
- else{
-   AllDays <- oneDay
- } 
- 
-}
+  mutate(smoke = factor(ifelse(smoke %in% c("Smoke (Light)", "Layer #0"), "light", 
+                               ifelse(smoke %in% c("Smoke (Heavy)", "Layer #0"),"heavy", "medium")), levels=c("light","medium","heavy")))
 
-saveRDS(AllDays,file = "~/GitHub/WFSmokeExp/Aug13ToAug142018.rds")
+sapply(str_split(foo$smoke, pattern = "<br />"), "[", 5)
+str_extract(foo$smoke, pattern %in% c("5","16","27"))
+
+
+
+
+
+
