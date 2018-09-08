@@ -7,6 +7,8 @@ library(R.utils)
 library(lwgeom)
 library(RCurl)
 
+
+unlink(paste0(tempdir(),'/*'))
 # HMSday <-"20100911"
 
 HMSgunzip <- function(gzFiles){
@@ -62,31 +64,40 @@ intersectHMSarchive <- function(HMSday){
              day = substr(HMSday, 7,8),
              date = paste0(year, month, day),
              smoke = factor(ifelse(Density %in% c(5, "5.000"), "light", 
-                                          ifelse(Density %in% c(27, "27.000") ,"heavy", "medium")), levels=c("light","medium","heavy"))
+                                          ifelse(Density %in% c(27, "27.000") ,"heavy", 
+                                                 ifelse(Density %in% c(16, "16.000"), "medium", "missing"))), levels=c("light","medium","heavy","missing"))
              )
     
-     SmkLayerDayInt <- st_intersection(st_make_valid(Smk),spatialFile) %>%
+     SmkTractDayInt <- st_intersection(st_make_valid(Smk),CAtractFile) %>%
       select(date, smoke, geoIDer)
     
-    st_geometry(SmkLayerDayInt) <- NULL
-    
- 
-  
-  
-  # SmkLayerDayInt  %>%
-  #   saveRDS(paste0("~/data/CA_tracts/CA_WF_tracts_data_",HMSday,".RDS"))
+    st_geometry(SmkTractDayInt) <- NULL
 
-    SmkLayerDayInt  %>%
+    SmkTractDayInt  %>%
       mutate(yn = 1) %>%
       group_by(date, smoke, geoIDer) %>%
       summarise(yn = mean(yn)) %>%
       spread(key = smoke,value = yn) %>%
-      replace_na(list(light = 0, medium=0, heavy=0)) %>%
-      mutate(maxSmoke = factor(ifelse(heavy == 1, "heavy",
-                                      ifelse(medium == 1, "medium", "light")), levels=c("light","medium","heavy")))
-    saveRDS(paste0("~/data/US_counties/US_WF_counties_data_",HMSday,".RDS"))
-  
+      saveRDS(paste0("~/data/CA_tracts/CA_WF_tracts_data_",HMSday,".RDS"))
+      
+      
+    SmkCountyDayInt <- st_intersection(st_make_valid(Smk),UScountyFile) %>%
+      select(date, smoke, geoIDer)
+    
+    st_geometry(SmkCountyDayInt) <- NULL
+    
+    SmkCountyDayInt  %>%
+      mutate(yn = 1) %>%
+      group_by(date, smoke, geoIDer) %>%
+      summarise(yn = mean(yn)) %>%
+      spread(key = smoke,value = yn) %>%
+      saveRDS(paste0("~/data/US_counties/US_WF_counties_data_",HMSday,".RDS"))
+    
+    # clear temp folder
+    
   unlink(paste0(tempdir(),'/*'))
+  
+  
   }
   else{
     return()
@@ -145,14 +156,14 @@ intersectHMSarchive <- function(HMSday){
 
 ############### run multiple intersects #########
 
-dateList <- format(seq(as.Date("2010/09/10"),as.Date("2010/09/12"), by = "day"),"%Y%m%d")
+dateList <- format(seq(as.Date("2010/06/01"),as.Date("2010/06/01"), by = "day"),"%Y%m%d")
 
-# spatialFile <-  st_read(dsn = "~/GitHub/WFSmokeExp/SmokeExposures/tractsSM.GeoJSON", stringsAsFactors = F) %>%
-#   st_transform(crs = 4326) %>%
-#   mutate(COUNTYFI_1 = as.character(paste0(STATE, COUNTY))) %>%
-#   rename(geoIDer = ct10)
+CAtractFile <-  st_read(dsn = "~/GitHub/WFSmokeExp/SmokeExposures/tractsSM.GeoJSON", stringsAsFactors = F) %>%
+  st_transform(crs = 4326) %>%
+  mutate(COUNTYFI_1 = as.character(paste0(STATE, COUNTY))) %>%
+  rename(geoIDer = ct10)
 
-spatialFile <-  st_read(dsn = "~/GitHub/WFSmokeExp_US/cb_2017_us_county_20m.kml", stringsAsFactors = F) %>% st_transform(crs = 4326) %>%
+UScountyFile <-  st_read(dsn = "~/GitHub/WFSmokeExp_US/cb_2017_us_county_20m.kml", stringsAsFactors = F) %>% st_transform(crs = 4326) %>%
   mutate(County = sapply(str_split(Name, pattern = "[<>]+"), "[[",4),
          CountyFIPS = sapply(str_split(Description, pattern = "[<>]+"), "[[", 62))  %>%
   rename(geoIDer = CountyFIPS)
@@ -163,25 +174,16 @@ mclapply(dateList, FUN = intersectHMSarchive)
 ########### function to combine ############
 
 
-oneyearFiles <- list.files("~/data/US_counties/", full.names = T)
 
-file <- oneyearFiles[253]
-foo <- readRDS("~/data/US_counties/US_WF_counties_data_20100911.RDS")
-
-head(foo)
-unique(foo$smoke)
+# when combining several 
 
 
-foo %>% 
-  mutate(yn = 1) %>%
-  group_by(date, smoke, geoIDer) %>%
-  summarise(yn = mean(yn)) %>%
-  spread(key = smoke,value = yn) %>%
+foo <- readRDS("~/data/US_counties/US_WF_counties_data_20100601.RDS")
+foo <- readRDS("~/data/CA_tracts/CA_WF_tracts_data_20100601.RDS")
+foo %>%
   replace_na(list(light = 0, medium=0, heavy=0)) %>%
   mutate(maxSmoke = factor(ifelse(heavy == 1, "heavy",
                                   ifelse(medium == 1, "medium", "light")), levels=c("light","medium","heavy")))
-
-
 
 
 
