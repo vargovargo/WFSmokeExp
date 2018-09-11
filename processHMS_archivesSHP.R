@@ -202,23 +202,25 @@ UScountyFile <-  st_read(dsn = "~/GitHub/WFSmokeExp_US/cb_2017_us_county_20m.kml
 #          CountyFIPS = sapply(str_split(Description, pattern = "[<>]+"), "[[", 62))  %>%
 #   rename(geoIDer = CountyFIPS)
 
-# dateListarchive <- format(seq(as.Date("2015/03/17"),as.Date("2016/02/12"), by = "day"),"%Y%m%d")
+# dateListarchive <- format(seq(as.Date("2015/06/22"),as.Date("2016/02/12"), by = "day"),"%Y%m%d")
 # mclapply(dateListarchive, FUN = intersectHMSarchive)
 
-# dateListrecent <- format(seq(as.Date("2018/06/29"),as.Date("2018/09/05"), by = "day"),"%Y%m%d")
-# mclapply(dateListrecent, FUN = intersectHMSrecent)
 
+# check this website to see the most recent date available http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/GIS/ARCHIVE/
+
+dateListrecent <- format(seq(as.Date("2018/09/06"),as.Date("2018/09/07"), by = "day"),"%Y%m%d")
+mclapply(dateListrecent, FUN = intersectHMSrecent)
 
 ########### function to combine ############
-
 
 # when combining several 
 
 library(data.table)
 library(ggplot2)
 library(scales)
+library(lubridate)
 
-dateList <- format(seq(as.Date("2010/06/01"),as.Date("2018/09/05"), by = "day"),"%Y%m%d")
+dateList <- format(seq(as.Date("2010/06/01"),as.Date("2018/09/07"), by = "day"),"%Y%m%d")
 
 area <- "County" # enter 'County' or 'CA' 
 
@@ -235,30 +237,103 @@ if(area == "County"){
 baseGrid <- data.table(expand.grid(date = dateList, geoIDer = unique(spatialFile$geoIDer)), key = c("date","geoIDer"))
 smokeFile <- rbindlist(mclapply(list.files(directory, full.names = T, pattern = ".RDS"), readRDS), fill = T) %>% setkey(date, geoIDer)
 
-foo <- merge(baseGrid, smokeFile, all.x=TRUE) %>%
+master <- merge(baseGrid, smokeFile, all.x=TRUE) %>%
   replace_na(list(light = 0, medium=0, heavy=0)) 
 
-foo[, "maxSmoke" := factor(ifelse(heavy == 1, "heavy",
+master[, "maxSmoke" := factor(ifelse(heavy == 1, "heavy",
                                ifelse(medium == 1, "medium", 
                                       ifelse(light ==1, "light", "none"))), levels=c("none","light","medium","heavy"))]
 
 
-foo[, c("lightSmokeAreas","mediumSmokeAreas","heavySmokeAreas") := lapply(.SD, sum), .SDcols = c("light","medium","heavy"), by = "date"]
+master[, c("lightSmokeAreas","mediumSmokeAreas","heavySmokeAreas") := lapply(.SD, sum), .SDcols = c("light","medium","heavy"), by = "date"]
 
-plotData <- foo[, lapply(.SD, sum), .SDcols = c("light","medium","heavy"), by = "date"] %>%
-  gather(light, medium, heavy,key = smoke,value = value) 
+stateKey <- fread("~/GitHub/WFSmokeExp/stateKey.csv") 
+
+# number of counties experiencing different smoke levels 
+
+plotData <- master[, lapply(.SD, sum), .SDcols = c("light","medium","heavy"), by = "date"] %>%
+  gather(heavy, medium, light, key = smoke,value = value) 
 
 
-plotData%>%
-  ggplot() +  geom_line(aes(x = as.Date(date, "%Y%m%d"), , y= value, group =smoke, color = smoke)) +
+plotData %>%
+  ggplot() +  geom_line(aes(x = as.Date(date, "%Y%m%d"), y= value, group =smoke, color = smoke)) +
   scale_color_manual(values = c("red","orange","yellow")) +
-  scale_x_date(labels = date_format("%m-%Y"), , breaks='1 year') +
-  theme_minimal()
-         
+  scale_x_date(labels = date_format("%Y-%m-%d"), breaks='1 year') +
+  theme_minimal() + 
+  xlab("Date") + 
+  ylab("number of Counties in US experiencing smoke")
+       
 
 
-foo
+plotData3 <-  master[, c("Year","stFIPS") := list(year(as.Date(date, "%Y%m%d")),
+                                                 as.integer(str_sub(geoIDer, 0,2)))] %>%
+  .[, lapply(.SD, sum), .SDcols = c("light","medium","heavy"), by = c("stFIPS","date")] %>%
+  gather(heavy, medium, light, key = smoke,value = value) 
+
+plotData3 %>% left_join(stateKey) %>%
+  filter(ST %in% c("CA","WA","OR","MT")) %>%
+  mutate(smoke= factor(smoke, levels = c("light","medium","heavy"))) %>%
+  ggplot() +  geom_area(aes(x = as.Date(date, "%Y%m%d"), y= value, group =smoke, fill = smoke), position = "dodge") +
+  scale_fill_manual(values = c("yellow","orange","red")) +
+  scale_x_date(labels = date_format("%Y-%m-%d"), breaks='1 year') +
+  theme_minimal() + 
+  xlab("Date") + 
+  ylab("number of Counties experiencing smoke") +
+  facet_grid(ST ~ ., scales = "free_y")
 
 
+# number of days of heavy smoke by county, by year
+
+plotData2 <-   master[, c("Year","stFIPS") := list(year(as.Date(date, "%Y%m%d")),
+                                                  as.integer(str_sub(geoIDer, 0,2)))] %>% 
+  .[, lapply(.SD, sum), .SDcols = c("heavy"), by = c("stFIPS", "Year")] 
+  
 
 
+plotData2 %>% left_join(stateKey) %>%
+  mutate(Year = factor(Year, levels = c(2018,2017,2016,2015,2014,2013,2012,2011,2010))) %>%
+  ggplot() + geom_bar(aes(x=stateName, y= heavy, fill=factor(Year)),stat="identity") +coord_flip()
+  
+
+plotData2 %>% left_join(stateKey) %>%
+  select(Year, heavy, ST) %>% 
+  spread(key = Year, value = heavy)  %>%
+  mutate(total = .[[2]] + .[[3]] + .[[4]] + .[[5]] + .[[6]] + .[[7]] + .[[8]] + .[[9]] + .[[10]]) %>% 
+  ggplot() + geom_bar(aes(x=reorder(ST, total), y=total, fill=total), stat="identity") + 
+  scale_fill_gradient(low = "blue", high = "red")
+
+
+plotData2 %>% left_join(stateKey) %>%
+  select(Year, heavy, ST) %>% 
+  spread(key = Year, value = heavy)  %>%
+  mutate(years10to12 = .[[2]] + .[[3]] + .[[4]],
+         years13to15 = .[[5]] + .[[6]] + .[[7]],
+         years16to18 = .[[8]] + .[[9]] + .[[10]],
+         pctChange = (years16to18 - years10to12)/years10to12) %>% na.omit() %>%
+  ggplot() + geom_bar(aes(x=reorder(ST, pctChange), y=pctChange, fill=pctChange), stat="identity") + 
+  scale_fill_gradient(low = "blue", high = "red")
+ 
+mapData <-   master[, "Year" := year(as.Date(date, "%Y%m%d"))] %>% 
+  .[, lapply(.SD, sum), .SDcols = c("heavy"), by = c("geoIDer", "Year")] %>% 
+  spread(key = Year, value = heavy) %>%
+  mutate(stFIPS =  as.integer(str_sub(geoIDer, 0,2)))  %>%  
+  filter(stFIPS < 57 & stFIPS != 15 )
+  
+  
+
+
+ fart <- UScountyFile %>% left_join(mapData) %>%  
+   filter(stFIPS < 57 & stFIPS != 15 ) %>% st_crop(c(xmin=-145, xmax=90, ymin=20, ymax=50))
+
+ breaks <- c(0,10,20,30,40, 50,60)
+ 
+ plot(fart["2010"], breaks = breaks)
+ plot(fart["2011"], breaks = breaks)
+ plot(fart["2012"], breaks = breaks)
+ plot(fart["2013"], breaks = breaks)
+ plot(fart["2014"], breaks = breaks)
+ plot(fart["2015"], breaks = breaks)
+ plot(fart["2016"], breaks = breaks)
+ plot(fart["2017"], breaks = breaks)
+ plot(fart["2018"], breaks = breaks)
+ 
