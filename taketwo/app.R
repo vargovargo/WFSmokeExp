@@ -5,14 +5,15 @@ library(tidyverse)
 library(leaflet)
 library(sf)
 library(data.table)
-library(DT)
-# install.packages("ggiraph")
-# library(ggiraph)
+library(dygraphs)
+library(xts)
 
-
+# setwd("~/GitHub/WFSmokeExp/taketwo/")
 smoke <- fread("CAsmokeFile.csv")
 smoke <- copy(smoke)
 setkey(smoke, date, STATEFP, COUNTYFP, TRACTCE, BLKGRPCE)
+
+ca <- st_read("counties.geoJSON") %>% mutate(countyFIPS = as.integer(substr(COUNTYFI_1, 3,5)))
 
 beginning <- as.character(min(unique(smoke$date))) # determine first day
 end <- as.character(max(unique(smoke$date))) # determine last day
@@ -30,16 +31,21 @@ setkey(allBGs, STATEFP, COUNTYFP, geoIDer)
 popCentroidsBG <- st_as_sf(tableList, coords = c("LONGITUDE", "LATITUDE"), crs = 4326)
 
 ui <- dashboardPage(
-  dashboardHeader(title = "Wildfire Smoke"),
+  dashboardHeader(title = "CA Climate Exposures Dashboard"),
   dashboardSidebar(sidebarMenu(
     menuItem("Background", tabName = "back", icon = icon("info")),
     menuItem(
-      "CA Wildfire Smoke",
+      "Extreme Heat",
+      tabName = "extremeHeat",
+      icon = icon("thermometer-three-quarters")
+    ),
+    menuItem(
+      "Wildfire Smoke",
       tabName = "smokeDash",
       icon = icon("fire")
     ),
     menuItem(
-      "CA Drought",
+      "Drought",
       tabName = "droughtDash",
       icon = icon("tint")
     ),
@@ -51,39 +57,60 @@ ui <- dashboardPage(
     
   )),
   dashboardBody(tabItems(
+    tabItem(tabName = "extremeHeat",
+            HTML("<h4>Under Construction</h4>")),
     tabItem(
       tabName = "smokeDash",
+      # box(
+      #   title = "Heavy, Medium, and Light Wildfire Smoke Exposures in California",
+      #   solidHeader = T,
+      #   status = "primary",
+      #   collapsible = T,
+      #   collapsed = F,
+      #   width = "100%",
+      #   dateRangeInput(width = "30%",
+      #     inputId = "Time",
+      #     label = "Select Time Period to View",
+      #     min = as.Date(beginning, "%Y%m%d"),
+      #     max = as.Date(end, "%Y%m%d"),
+      #     start = as.Date("20180601", "%Y%m%d"),
+      #     end = as.Date("20180930", "%Y%m%d"),
+      #     separator = " to ",
+      #     format =
+      #   ),
+      #   plotOutput("VulnPlot")
+      # ),
+      box(
+        title = "Select a County",
+        status = "info",
+        collapsible = T,
+        collapsed = F,
+        width = "30%",
+        ggiraphOutput('cmap')
+      ),
       box(
         title = "Heavy, Medium, and Light Wildfire Smoke Exposures in California",
         solidHeader = T,
         status = "primary",
         collapsible = T,
         collapsed = F,
-        width = "100%",
-        dateRangeInput(width = "30%",
-          inputId = "Time",
-          label = "Select Time Period to View",
-          min = as.Date(beginning, "%Y%m%d"),
-          max = as.Date(end, "%Y%m%d"),
-          start = as.Date("20180601", "%Y%m%d"),
-          end = as.Date("20180930", "%Y%m%d"),
-          separator = " to ",
-          format =
-        ),
-        plotOutput("VulnPlot")
-      ),
+        width = "70%",
+        dygraphOutput("dygraph")
+      ), 
+      textOutput(outputId = "feedback")
       
-      fluidRow(
-        box(
-          title = "Table of Plotted Data",
-          footer = "Table of Plotted Data",
-          status = "info",
-          collapsible = T,
-          collapsed = T,
-          width = "100%",
-          dataTableOutput('table')
-        )
-      )
+      # fluidRow(
+      #   box(
+      #     title = "Table of Plotted Data",
+      #     footer = "Table of Plotted Data",
+      #     status = "info",
+      #     collapsible = T,
+      #     collapsed = T,
+      #     width = "100%",
+      #     dataTableOutput('table')
+      #   )
+      # ),
+      
     ),
     
     
@@ -155,11 +182,19 @@ ui <- dashboardPage(
 
 server <- function(input, output) { 
 
-    # dateList <- reactive({
-    #    format(seq(as.Date(input$Time[1]),as.Date(input$Time[2]), by = "day"),"%Y%m%d")
-    # 
-    # })
-    # 
+  rv <- reactiveValues(selectedCounty = NULL)
+  
+  
+  observeEvent(input$cmap_selected, {
+    rv$selectedCounty <- as.integer(input$cmap_selected)
+  })
+  
+  
+    dateList <- reactive({
+       format(seq(as.Date(input$Time[1]),as.Date(input$Time[2]), by = "day"),"%Y%m%d")
+
+    })
+
     
     # SmokeDaysByTract <- reactive({
     #     AllData %>%
@@ -175,32 +210,54 @@ server <- function(input, output) {
     #     spread(key = smoke,value = NumberOfDays) 
     # })
   
+  output$dygraph <- renderDygraph({
+    # dates <- seq(as.Date(beginning):as.Date(end), by = "day")
 
-    
-  SmokeDaysByTract <- reactive({
-    if(input$radioTime == "last 2 weeks"){data.table(readRDS("last2weeks.RDS"))}
-    
-    else if(input$radioTime == "last 30 days"){data.table(readRDS("last30days.RDS"))}
-    
-    else {data.table(readRDS("last2months.RDS"))}
-    
+    foo <- if(is.null(rv$selectedCounty)) {
+      smoke[.(unique(date))] %>%
+        replace_na(list(
+          light = 0,
+          medium = 0,
+          heavy = 0
+        )) %>%
+        .[, .(
+          lightSmoke = sum(light * POPULATION, na.rm = T) / 1000000,
+          mediumSmoke = sum(medium * POPULATION, na.rm = T) / 1000000,
+          heavySmoke = sum(heavy * POPULATION, na.rm = T) / 1000000
+        ), by = date] %>%
+        .[, date2 := as.POSIXct(as.Date(as.character(date),  format = "%Y%m%d"))] %>%
+        .[, .(date2, lightSmoke, mediumSmoke, heavySmoke)] %>%
+        .[order(date2)]
+      
+    } else{
+      smoke[.(unique(date), 6L, c(1,3,5))] %>%
+      replace_na(list(
+        light = 0,
+        medium = 0,
+        heavy = 0
+      )) %>%
+      .[, .(
+        lightSmoke = sum(light * POPULATION, na.rm = T) / 1000000,
+        mediumSmoke = sum(medium * POPULATION, na.rm = T) / 1000000,
+        heavySmoke = sum(heavy * POPULATION, na.rm = T) / 1000000
+      ), by = date] %>%
+      .[, date2 := as.POSIXct(as.Date(as.character(date),  format = "%Y%m%d"))] %>%
+      .[, .(date2, lightSmoke, mediumSmoke, heavySmoke)] %>%
+      .[order(date2)]
+      }
+
+    dygraph(xts(foo, order.by = foo$date2), main = "Wildfire Smoke Exposures in CA")  %>%
+      dySeries("lightSmoke", drawPoints = F, color = "yellow") %>%
+      dySeries("mediumSmoke", drawPoints = F, color = "orange") %>%
+      dySeries("heavySmoke", drawPoints = F, color = "red") %>%
+      dyOptions(fillGraph = TRUE, fillAlpha = 0.4) %>% dyRangeSelector(dateWindow = c("2018-06-01", "2018-09-30"), height = 20)
+
   })
-  
-  
-  numDays <- reactive({
-    if(input$radioTime == "last 2 weeks"){14}
-    
-    else if(input$radioTime == "last 30 days"){30}
-    
-    else {60}
-    
-  })
-  
-    
+   
+
   SmokeByDay <-
     reactive ({
-      smoke[.(as.integer(as.character(input$Time[1], format = "%Y%m%d")):as.integer(as.character(input$Time[2], format =
-                                                                                                   "%Y%m%d")))] %>%
+      smoke[.(as.integer(as.character(input$Time[1], format = "%Y%m%d")):as.integer(as.character(input$Time[2], format = "%Y%m%d")))] %>%
         replace_na(list(
           light = 0,
           medium = 0,
@@ -208,205 +265,43 @@ server <- function(input, output) {
         ))
     })
    
-    mapTemp <- reactive({
-        CAtracts %>% merge(SmokeDaysByTract(), by = "ct10")
-    })
+    # mapTemp <- reactive({
+    #     CAtracts %>% merge(SmokeDaysByTract(), by = "ct10")
+    # })
     
     
  ############ MAP ###############################   
-  #################### alternative mapping with all three layers in the single map ######################
-    output$HMLdaysMap <- renderLeaflet({
+ ######### Create a Map to selcet COunty #############
 
-        pal_l <- colorBin(palette =  "Reds",
-                          bins = 7,
-                          domain = na.exclude(SmokeDaysByTract()$light))
-
-        pal_m <- colorBin(palette =  "Reds",
-                          bins = 7,
-                          domain = na.exclude(SmokeDaysByTract()$medium))
-
-        pal_h <- colorBin(palette =  "Reds",
-                          bins = 7,
-                          domain = na.exclude(SmokeDaysByTract()$heavy))
-
-
-        mapTemp() %>%
-            leaflet()  %>%
-            addProviderTiles(providers$CartoDB.Positron) %>%
-            # addPolygons(
-            #     color = "#444444",
-            #     weight = 0.3,
-            #     smoothFactor = 0.1,
-            #     fillOpacity = 0.6,
-            #     fillColor = ~ pal_l(light),
-            #     highlightOptions = highlightOptions(
-            #         color = "white",
-            #         weight = 2,
-            #         bringToFront = TRUE
-            #     ),
-            #     popup = paste0(
-            #         "This tract has experienced ",
-            #         mapTemp()$light,
-            #         " days (",
-            #         round(100 * mapTemp()$light / numDays(), 1),
-            #         "%) of Light Smoke Exposure."
-            #     ),
-            #     group = "Light Smoke"
-            # ) %>%
-            # addPolygons(
-            #     color = "#444444",
-            #     weight = 0.3,
-            #     smoothFactor = 0.1,
-            #     fillOpacity = 0.6,
-            #     fillColor = ~ pal_m(medium),
-            #     highlightOptions = highlightOptions(
-            #         color = "white",
-            #         weight = 2,
-            #         bringToFront = TRUE
-            #     ),
-            #     popup = paste0(
-            #         "This tract has experienced ",
-            #         mapTemp()$medium,
-            #         " days (",
-            #         round(100 * mapTemp()$medium / numDays(), 1),
-            #         "%) of Medium Smoke Exposure."
-            #     ),
-            #     group = "Medium Smoke"
-            # ) %>%
-            addPolygons(
-                color = "#444444",
-                weight = 0.3,
-                smoothFactor = 0.1,
-                fillOpacity = 0.6,
-                fillColor = ~ pal_h(heavy),
-                highlightOptions = highlightOptions(
-                    color = "white",
-                    weight = 2,
-                    bringToFront = TRUE
-                ),
-                popup = paste0(
-                    "This tract has experienced ",
-                    mapTemp()$heavy,
-                    " days (",
-                    round(100 * mapTemp()$heavy / numDays(), 1),
-                    "%) of Heavy Smoke Exposure."
-                ),
-                group = "Heavy Smoke"
-            ) 
-        
-        # %>%
-        #     addLayersControl(
-        #         baseGroups = c("Heavy Smoke", "Medium Smoke", "Light Smoke"),
-        #         options = layersControlOptions(collapsed = TRUE)
-        #     )
-
-
-
-    })
+    
+   output$cmap <- renderggiraph({
+     
+     g <- ggplot(ca) + 
+       geom_sf() + 
+       geom_sf_interactive(aes(tooltip = NAME_1, 
+                               data_id = countyFIPS), 
+                               size = 0.5) + 
+       theme(axis.line=element_blank(),
+             axis.text.x=element_blank(),
+             axis.text.y=element_blank(),
+             axis.ticks=element_blank(),
+             axis.title.x=element_blank(),
+             axis.title.y=element_blank(),
+             legend.position="none",
+             panel.background=element_blank(),
+             panel.border=element_blank(),
+             panel.grid.major=element_line(colour = "transparent"),
+             panel.grid.minor=element_blank(),
+             plot.background=element_blank())
+     
+     
+     ggiraph(code = print(g), selection_type = "multiple",
+             hover_css = "cursor:pointer; fill:grey; stroke:black;")
+     
+     
+   })
     
     
-    ################### mapping #######################
-    # output$HMLdaysMap <- renderLeaflet({
-    #     
-    # 
-    #     if(input$Smoke == "Light"){
-    # 
-    #         pal_l <- colorBin(palette =  "Reds",
-    #                           bins = 7,
-    #                           domain = na.exclude(SmokeDaysByTract()$light))
-    #         
-    #         
-    #         mapTemp() %>%
-    #             leaflet()  %>%
-    #             addProviderTiles(providers$CartoDB.Positron) %>%
-    #             addPolygons(
-    #                 color = "#444444",
-    #                 weight = 0.3,
-    #                 smoothFactor = 0.1,
-    #                 fillOpacity = 0.6,
-    #                 fillColor = ~ pal_l(light),
-    #                 highlightOptions = highlightOptions(
-    #                     color = "white",
-    #                     weight = 2,
-    #                     bringToFront = TRUE
-    #                 ),
-    #                 popup = paste0(
-    #                     "This tract has experienced ",
-    #                     mapTemp()$light,
-    #                     " days (",
-    #                     round(100 * mapTemp()$light/length(dateList()), 1),
-    #                     "%) of Light Smoke Exposure."
-    #                 ),
-    #                 group = "Light Smoke"
-    #             )
-    #         
-    # 
-    #     } 
-    #     else if(input$Smoke == "Medium"){
-    # 
-    #         pal_m <- colorBin(palette =  "Reds",
-    #                           bins = 7,
-    #                           domain = na.exclude(SmokeDaysByTract()$medium))
-    # 
-    #         mapTemp() %>%
-    #             leaflet()  %>%
-    #             addProviderTiles(providers$CartoDB.Positron) %>%
-    #             addPolygons(
-    #                 color = "#444444",
-    #                 weight = 0.3,
-    #                 smoothFactor = 0.1,
-    #                 fillOpacity = 0.6,
-    #                 fillColor = ~ pal_m(medium),
-    #                 highlightOptions = highlightOptions(
-    #                     color = "white",
-    #                     weight = 2,
-    #                     bringToFront = TRUE
-    #                 ),
-    #                 popup = paste0(
-    #                     "This tract has experienced ",
-    #                     mapTemp()$medium,
-    #                     " days (",
-    #                     round(100 * mapTemp()$medium / length(dateList()), 1),
-    #                     "%) of Medium Smoke Exposure."
-    #                 ),
-    #                 group = "Medium Smoke"
-    #             )
-    #     }
-    #     else{
-    # 
-    #         pal_h <- colorBin(palette =  "Reds",
-    #                           bins = 7,
-    #                           domain = na.exclude(SmokeDaysByTract()$heavy))
-    #         
-    #         mapTemp() %>%
-    #             leaflet()  %>%
-    #             addProviderTiles(providers$CartoDB.Positron) %>%
-    #             addPolygons(
-    #                 color = "#444444",
-    #                 weight = 0.3,
-    #                 smoothFactor = 0.1,
-    #                 fillOpacity = 0.6,
-    #                 fillColor = ~ pal_h(heavy),
-    #                 highlightOptions = highlightOptions(
-    #                     color = "white",
-    #                     weight = 2,
-    #                     bringToFront = TRUE
-    #                 ),
-    #                 popup = paste0(
-    #                     "This tract has experienced ",
-    #                     mapTemp()$heavy,
-    #                     " days (",
-    #                     round(100 * mapTemp()$heavy / length(dateList()), 1),
-    #                     "%) of Heavy Smoke Exposure."
-    #                 ),
-    #                 group = "Heavy Smoke"
-    #                 
-    #             )
-    #         
-    #     }
-    # 
-    # })
-
     
 ############### PLOT ############################   
     
@@ -440,12 +335,13 @@ server <- function(input, output) {
          fill = smokeLevel
        )) +
        scale_fill_manual(values = c("yellow","orange","red")) +
-       geom_area(stat = "identity", position = "dodge") + 
+       geom_area(stat = "identity", position = "dodge", alpha= 0.6) + 
        ylab("Millions of Persons Exposed") + 
        xlab("Date") + 
+       guides(alpha = FALSE) + 
        theme_minimal() + 
-       geom_hline(yintercept = 37.25396, color = "red", linetype="dashed") + 
-       geom_label(aes(x = as.Date("2018-05-01"),y = 37.25396, label="Total CA Population")) 
+       geom_hline(yintercept = 37.25396, color = "red", linetype="dashed") # + 
+       # geom_label(aes(x = as.Date("2018-05-01"),y = 37.25396, label="Total CA Population")) 
      
    })
    
@@ -453,7 +349,7 @@ server <- function(input, output) {
    output$table <- renderDataTable(SmokeByDay())
     
    output$feedback <- renderPrint({
-     paste0("Start Date Selected:  ", input$Time[1], "Data Type:    ",class(input$Time[1]))
+     paste0("County Selected:  ", rv$selectedCounty)
      })
    
   
@@ -483,12 +379,12 @@ server <- function(input, output) {
     # output$text <- renderText(paste0("number of days in the period you selected: ",length(dateList())))
     # 
    
-   options(bitmapType='cairo')
- 
-   outputOptions(output, "HMLdaysMap", suspendWhenHidden = FALSE)
-   outputOptions(output, "VulnPlot", suspendWhenHidden = FALSE)
-   outputOptions(output, "TimePlot", suspendWhenHidden = FALSE)
-   
+   # options(bitmapType='cairo')
+   # 
+   # outputOptions(output, "HMLdaysMap", suspendWhenHidden = FALSE)
+    outputOptions(output, "VulnPlot", suspendWhenHidden = FALSE)
+   # outputOptions(output, "TimePlot", suspendWhenHidden = FALSE)
+   # 
     }
 
 shinyApp(ui, server)
