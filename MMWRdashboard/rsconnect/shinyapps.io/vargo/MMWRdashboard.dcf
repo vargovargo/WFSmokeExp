@@ -1,0 +1,12 @@
+name: MMWRdashboard
+title: MMWRdashboard
+username:
+account: vargo
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 542247
+bundleId: 1674713
+url: https://vargo.shinyapps.io/MMWRdashboard/
+when: 1541006782.20302
+asMultiple: FALSE
+asStatic: FALSE

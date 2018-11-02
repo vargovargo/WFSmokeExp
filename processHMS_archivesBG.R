@@ -102,7 +102,7 @@ unlink(paste0(tempdir(),'/*'))
 
 # list.files(tempdir())
 # 
- # HMSday <- dateListrecent[1]
+  HMSday <- dateListrecent[1]
 
 
 
@@ -112,7 +112,7 @@ intersectHMSrecent <- function(HMSday){
   month <- substr(HMSday, 5,6)
   day <- substr(HMSday, 7,8)
   
-  if(url.exists(paste0("http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/GIS/ARCHIVE/hms_smoke",HMSday,".dbf"))){
+  # if(url.exists(paste0("http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/GIS/ARCHIVE/hms_smoke",HMSday,".dbf"))){
     
     directory <- tempdir()
     
@@ -155,10 +155,10 @@ intersectHMSrecent <- function(HMSday){
     unlink(paste0(tempdir(),'/*'))
     
     
-  }
-  else{
-    return()
-  }
+  # }
+  # else{
+  #   return()
+  # }
   
 }
 
@@ -245,6 +245,6 @@ popCentroidsBG <- st_as_sf(tableList, coords = c("LONGITUDE", "LATITUDE"), crs =
 
 # check this website to see the most recent date available http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/GIS/ARCHIVE/
 
-dateListrecent <- format(seq(as.Date("2018/09/30"),as.Date("2018/10/04"), by = "day"),"%Y%m%d")
+dateListrecent <- format(seq(as.Date("2018/09/30"),as.Date("2018/10/19"), by = "day"),"%Y%m%d")
 mclapply(dateListrecent, FUN = intersectHMSrecent)
 
