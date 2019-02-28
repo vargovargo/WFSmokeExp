@@ -337,7 +337,7 @@ lapply(dateListarchive, FUN = intersectHMSarchive)
 # this is usful for updating once you have run over the archive already
 # check this website to see the most recent date available http://satepsanone.nesdis.noaa.gov/pub/FIRE/HMS/GIS/ARCHIVE/
 dateListrecent <-
-  format(seq(as.Date("2019/01/27"), as.Date("2019/02/20"), by = "day"), "%Y%m%d")
+  format(seq(as.Date("2019/01/09"), as.Date("2019/01/26"), by = "day"), "%Y%m%d")
 # apply the function to each date in the archive list
 lapply(dateListrecent, FUN = intersectHMSrecent)
 
