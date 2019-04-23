@@ -1,63 +1,284 @@
-########### function to combine ############
 
-# when combining several 
+################################################
+# Jason Vargo
+# script to process wildfire smoke data for MMWR
+# April 2019
+################################################
+
+
 rm(list = ls())
 
 library(tidyverse)
 library(sf)
 library(data.table)
-library(scales)
-library(lubridate)
-library(parallel)
 
+ 
 stateKey <- fread("~/GitHub/WFSmokeExp/stateKey.csv") %>%
-  mutate(charST = ifelse(stFIPS<10, paste0("0",stFIPS), as.character(stFIPS)))
-# 
-# BG_list <- lapply(stateKey$charST, function(x) paste0("https://www2.census.gov/geo/docs/reference/cenpop2010/blkgrp/CenPop2010_Mean_BG",x,".txt"))
-# 
-# tableList <- lapply(BG_list, fread)
+  mutate(charST = ifelse(stFIPS<10, paste0("0",stFIPS), as.character(stFIPS))) %>%
+  rename(STATEFP = stFIPS)
 
 tableList <- fread("https://www2.census.gov/geo/docs/reference/cenpop2010/blkgrp/CenPop2010_Mean_BG.txt")
-
-popCentroidsBG <- st_as_sf(tableList, coords = c("LONGITUDE", "LATITUDE"), crs = 4326) 
-
-directory <- "~/data/US_BG/RDS"
-allBGs <- tableList[, geoIDer := paste0(STATEFP,"_",COUNTYFP,"_",TRACTCE,"_",BLKGRPCE)]
-allBGs <- copy(allBGs)
-setkey(allBGs, STATEFP, COUNTYFP, geoIDer)
-
-# convert <- function(RDSfile){
-#   
-#   fwrite(readRDS(RDSfile), paste0("~/data/US_BG/CSV/", sub(pattern = "(.*)\\..*$", replacement = "\\1", basename(RDSfile)),".csv"))
-#   
-# }
-
-# mclapply(list.files(directory,  full.names = T), convert)
-
-
-############  update smokeFile ###################
-# smokeFile <- rbindlist(mclapply(list.files("~/data/US_BG/CSV/",full.names = T), fread), fill = T) 
-# smokeFile %>% fwrite("~/data/smokeFile.csv" )
-# smokeFile %>% saveRDS("~/data/smokeFile.rds" )
-# smokeFile[STATEFP ==6L] %>% fwrite("~/data/CAsmokeFile.csv" )
-# smokeFile[STATEFP ==6L] %>% fwrite(//10.226.226.173/R-Dev/ohe/SmokeExposures/CAsmokeFile.csv)
  
-# replace_na(smokeFile, list(light = 0, medium = 0, heavy= 0)) %>% .[, .(light = sum(light * POPULATION, na.rm=T),
-#                                                                        medium = sum(medium * POPULATION, na.rm=T),
-#                                                                        heavy = sum(heavy * POPULATION, na.rm=T),
-#                                                                        POPULATION = sum(POPULATION, na.rm=T)), by=.(date, STATEFP, COUNTYFP)] %>%
-#   fwrite("~/data/USsmokeFile.csv")
+pop <- tableList[,.(totalPOP = sum(POPULATION)), by=.(STATEFP)] %>% merge(stateKey)
 
 
+tableListTract <- fread("https://www2.census.gov/geo/docs/reference/cenpop2010/tract/CenPop2010_Mean_TR.txt")
 
-
-
-smokeFile <- fread("~/data/smokeFile.csv")
+smokeFile <- fread("~/data/smokeFile.csv")[,date := as.Date(as.character(date),"%Y%m%d")] 
 setkey(smokeFile, date, STATEFP, COUNTYFP, TRACTCE, BLKGRPCE) 
 smokeFile <-copy(smokeFile)
 
-start <- as.character(min(unique(smokeFile$date)))
-end <- as.character(max(unique(smokeFile$date)))
+
+# number of people exposed in a year by state
+ExposedPOP.stateYear  <- smokeFile[,year := year(date)] %>% 
+  replace_na(list(
+    light = 0,
+    medium = 0,
+    heavy = 0
+  )) %>%
+  .[,.(lightdays = max(light, na.rm = T),
+       mediumdays = max(medium, na.rm = T),
+       heavydays = max(heavy, na.rm = T), 
+       POP = mean(POPULATION, na.rm = T)), 
+    by=.(STATEFP, COUNTYFP, TRACTCE, BLKGRPCE, year)] %>%
+  .[, .(lightPOP = sum(POP*lightdays),
+        mediumPOP = sum(POP*mediumdays),
+        heavyPOP = sum(POP*heavydays)), by =.(STATEFP, year)] %>% 
+  merge(pop, by = "STATEFP",all.x=T) # %>%
+# fwrite("~/tempZip/ExposedPOP_stateYear.csv")
+
+
+ExposedPOP.stateYear[, `:=` (light = lightPOP / totalPOP, 
+                              medium = mediumPOP / totalPOP, 
+                              heavy = heavyPOP / totalPOP)] %>%
+  melt.data.table(measure.vars = c("light", "medium", "heavy"), id.vars = c("stateName", "year"), variable.name = "Exposure", value.name = "Percent")  %>%
+# fwrite("~/tempZip/ExposedPOP_stateYear_percents.csv")
+# 
+# 
+# %>% 
+  ggplot() + geom_line(aes(x= year, y= Percent, color = factor(Exposure))) + facet_wrap(~ stateName) 
+
+
+
+#
+############ create persondays_by_svi_raw table ##################
+#
+
+######## tract file for joining with SVI ###########
+
+tractAnnual<- 
+  smokeFile[,year := year(date)] %>% 
+  .[, .(
+    light = sum(light * POPULATION, na.rm = T),
+    medium = sum(medium * POPULATION, na.rm = T),
+    heavy = sum(heavy * POPULATION, na.rm = T)
+  ), by = .(year, STATEFP, COUNTYFP, TRACTCE)] %>% merge(tableListTract)
+
+
+svi <- fread("/Users/jvargo/Downloads/SVI2010_US.csv")[,.(GEO_ID, STATEFP = STATE_FIPS, COUNTYFP = CNTY_FIPS, TRACTCE = TRACT , STCOFIPS, FIPS,STATE_ABBR,STATE_NAME, COUNTY,TOTPOP , R_PL_THEME1, R_PL_THEME2, R_PL_THEME3, R_PL_THEME4, R_PL_THEMES)]
+
+merged <- merge(tractAnnual, svi) # %>% fwrite("./tempZip/FullSVItracts.csv")
+
+quartify <- function(values){
+  
+  foo <- ifelse(values == -999, "missing", 
+                ifelse(values > 0 & values <= .25, "1 least vulnerable",
+                       ifelse(values > .25 & values <= .5, "2 percentile 25-50",
+                              ifelse(values > 0.5 & values <= .75,"3 percentile 50-75",
+                                     ifelse(values > .75 & values <= 1, "4 most vulnerable","missing")))))
+  
+  return(foo)
+                
+}
+
+
+westStates <- c("California","Oregon","Washington")
+
+SES <- merged[R_PL_THEMES != -999, .(quartile = quartify(R_PL_THEME1), light, medium, heavy, STATE_NAME, year)] %>%
+  .[, .(
+    light = sum(light, na.rm = T),
+    medium = sum(medium, na.rm = T),
+    heavy = sum(heavy, na.rm = T)
+  ), by = . (quartile, year, STATE_NAME)] %>%
+  melt.data.table(id.vars = c("quartile", "year", "STATE_NAME"), variable.name = "smoke_level")  %>% mutate(svi_theme = "SES", 
+                                                                          region = ifelse(STATE_NAME %in% westStates,  "west", "not west")) %>% data.table()
+
+HC <- merged[R_PL_THEMES != -999, .(quartile = quartify(R_PL_THEME2), light, medium, heavy, STATE_NAME, year)] %>%
+  .[, .(
+    light = sum(light, na.rm = T),
+    medium = sum(medium, na.rm = T),
+    heavy = sum(heavy, na.rm = T)
+  ), by = . (quartile, year, STATE_NAME)] %>%
+  melt.data.table(id.vars = c("quartile", "year", "STATE_NAME"), variable.name = "smoke_level") %>% mutate(svi_theme = "HousingComposition", 
+                                                                         region = ifelse(STATE_NAME %in% westStates,  "west", "not west"))%>% data.table()
+
+MSL <- merged[R_PL_THEMES != -999, .(quartile = quartify(R_PL_THEME3), light, medium, heavy, STATE_NAME, year)] %>%
+  .[, .(
+    light = sum(light, na.rm = T),
+    medium = sum(medium, na.rm = T),
+    heavy = sum(heavy, na.rm = T)
+  ), by = . (quartile, year, STATE_NAME)] %>%
+  melt.data.table(id.vars = c("quartile", "year", "STATE_NAME"), variable.name = "smoke_level") %>% mutate(svi_theme = "Minority", 
+                                                                         region = ifelse(STATE_NAME %in% westStates, "west", "not west"))%>% data.table()
+
+HT <- merged[R_PL_THEMES != -999, .(quartile = quartify(R_PL_THEME4), light, medium, heavy, STATE_NAME, year)] %>%
+  .[, .(
+    light = sum(light, na.rm = T),
+    medium = sum(medium, na.rm = T),
+    heavy = sum(heavy, na.rm = T)
+  ), by = . (quartile, year, STATE_NAME)] %>%
+  melt.data.table(id.vars = c("quartile", "year", "STATE_NAME"), variable.name = "smoke_level") %>% mutate(svi_theme = "HousingTransportation", 
+                                                                         region = ifelse(STATE_NAME %in% westStates, "west", "not west"))%>% data.table()
+
+QTable <- data.table(bind_rows(SES, HC, MSL, HT))
+
+
+QTable[quartile != "missing", .(billion_person_days = sum(as.numeric(value))/1000000000), by = .(smoke_level, quartile, svi_theme)] %>% 
+  ggplot() + geom_bar(stat="identity",position = "dodge",aes(x=svi_theme, y=billion_person_days, fill=quartile)) +facet_grid(smoke_level ~ ., scales="free_y")
+
+
+QTable[quartile != "missing", .(billion_person_days = sum(as.numeric(value))/1000000000), by = .(smoke_level, quartile, svi_theme, region)] %>% 
+  ggplot() + geom_bar(stat="identity",position = "stack",aes(x=quartile, y=billion_person_days, fill=region)) +facet_grid( svi_theme ~ smoke_level, scales="free_x") +coord_flip()
+
+
+bind_rows({
+  QTable[quartile != "missing", .(region = "US", billion_person_days = sum(as.numeric(value))/1000000000), by = .(smoke_level, quartile, svi_theme)]
+},
+{
+  QTable[quartile != "missing", .(billion_person_days = sum(as.numeric(value))/1000000000), by = .(smoke_level, quartile, svi_theme, region)]
+}) %>% fwrite("~/tempZip/persondays_by_svi_raw.csv")
+
+
+
+
+
+
+
+head( fread("/Users/jvargo/Downloads/SVI2010_US.csv"))
+
+
+
+%>% fwrite("./tempZip/PDsBySVI_percentile.csv")
+
+
+
+POP <- svi[F_PL_TOTAL != -999, .(SES = F_PL_THEME1, HC = R_PL_THEME2, MCL = F_PL_THEME3, HT = F_PL_THEME4, TOTPOP, STATE_NAME)] %>%
+  .[, .(
+    POP = sum(TOTPOP)
+  ), by = . (SES,HC, MCL,HT, STATE_NAME)] %>% mutate(theme = "POP",
+                                                     west = ifelse(STATE_NAME %in% westStates, "west", "not west")) %>% fwrite("./tempZip/POPBySVI.csv")
+
+
+byPercentile <- merged[R_PL_THEMES != -999, .(score = R_PL_THEMES, light, medium, heavy, STATE_NAME, year)] %>%
+  .[,vuln := ifelse(score > 0.75, 1, 0)] %>%
+  .[, .(
+    light = sum(light, na.rm = T),
+    medium = sum(medium, na.rm = T),
+    heavy = sum(heavy, na.rm = T)
+  ), by = . (vuln, year, STATE_NAME)] %>%
+  melt.data.table(id.vars = c("vuln", "year", "STATE_NAME"))  %>% mutate(theme = "Percentile", 
+                                                                         west = ifelse(STATE_NAME %in% westStates,  "west", "not west"))
+
+
+byPercentile %>% fwrite("./tempZip/PDstop25SVI.csv")
+
+byMinor %>%
+  ggplot() + geom_bar(stat = "identity",position = "fill",aes(x = year,y = value, fill = factor(theme))) + facet_grid(variable ~ ., scales = "free_y")
+
+merged[F_PL_TOTAL != -999, .( light = sum(light, na.rm=T)), by=. (F_PL_TOTAL, STATE_NAME, year)] %>%
+  ggplot() + geom_area(stat = "identity", position = "stack", aes(x=year, y= light, fill= factor(F_PL_TOTAL))) + facet_wrap(~STATE_NAME)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+merged[F_PL_TOTAL != -999, .( heavy = sum(heavy, na.rm=T)), by=. (F_PL_TOTAL,  year)] %>%
+  ggplot() + geom_area(stat = "identity", position = "stack", aes(x=year, y= heavy, fill= factor(F_PL_TOTAL))) + ggthemes::theme_pander() + scale_fill_brewer(type = "seq")
+
+
+
+merged %>% ggplot() + geom_point(aes(x=heavy, y=AGE65), color="red")
+
+############# investigate season length ############
+seasonOnset <- 
+ smokeFile[, doy := yday(date)] %>% 
+  .[heavy == 1, .(start = min(doy),
+                  end = max(doy)), by = .(year, STATEFP, COUNTYFP, TRACTCE)] 
+
+seasonOnset[, .(start = min(start, na.rm = T),
+                end = max(end, na.rm = T)), by = .(year, STATEFP)] %>%
+  melt.data.table(id.vars = c("year","STATEFP"),measure.vars = c("start","end"),variable.name = "timing",value.name = "DoY") %>% ggplot() + geom_line(aes(x=year, y=DoY, color = factor(timing))) + facet_wrap(~ STATEFP) + ggthemes::theme_tufte()
+
+seasonOnset %>%
+  melt.data.table(id.vars = c("year","STATEFP"),measure.vars = c("start","end"),variable.name = "timing",value.name = "DoY") %>% ggplot() + geom_line(aes(x=year, y=DoY, color = factor(timing))) + facet_wrap(~ STATEFP) + ggthemes::theme_tufte()
+
+
+seasonOnset[, length := (end - start)] %>%
+  ggplot() +
+  geom_bar(aes(x = year, y = length, fill = factor(year)), stat = "identity") +
+  facet_wrap( ~ STATEFP) +
+  ggthemes::theme_fivethirtyeight()
+
+
+# number of people exposed in a year National
+
+ExposedPOP.USYear  <- smoke2[,year := year(date2)] %>% 
+  replace_na(list(
+    light = 0,
+    medium = 0,
+    heavy = 0
+  )) %>%
+  .[,.(lightdays = max(light, na.rm = T),
+       mediumdays = max(medium, na.rm = T),
+       heavydays = max(heavy, na.rm = T), 
+       POP = mean(POPULATION, na.rm = T)), 
+    by=.(STATEFP, COUNTYFP, TRACTCE, BLKGRPCE, year)] %>%
+  .[, .(lightPOP = sum(POP*lightdays),
+        mediumPOP = sum(POP*mediumdays),
+        heavyPOP = sum(POP*heavydays)), by =.(year)] %>% 
+  .[, totalPOP := sum(pop$totalPOP)]  # %>%
+   fwrite("~/tempZip/ExposedPOP_USYear.csv")
+
+
+ExposedPOP.USYear[, `:=` (light = lightPOP / totalPOP, 
+                             medium = mediumPOP / totalPOP, 
+                             heavy = heavyPOP / totalPOP)] %>%
+  melt.data.table(measure.vars = c("light", "medium", "heavy"), id.vars = c("year"), variable.name = "Exposure", value.name = "Percent")  %>%
+  fwrite("~/tempZip/ExposedPOP_USYear_percents.csv")
+
+%>% 
+  ggplot() + geom_line(aes(x= year, y= Percent, size = 3, color = factor(Exposure))) + geom_smooth(aes(x= year, y= Percent, linetype = "dash", color = factor(Exposure)))
+
+
+
+# person-days of exposure by state and year
+Exposure.stateYear  <- smoke2[,year := year(date2)] %>% 
+  replace_na(list(
+    light = 0,
+    medium = 0,
+    heavy = 0
+  )) %>%
+  .[,.(lightPDs = sum(light*POPULATION, na.rm = T),
+       mediumPDs = sum(medium*POPULATION, na.rm = T),
+       heavyPDs = sum(heavy*POPULATION, na.rm = T)), 
+    by=.(STATEFP, year)]    %>%
+fwrite("~/tempZip/Exposure_stateYear.csv")
+
+Exposure.stateYear  %>%
+  melt.data.table(measure.vars = c("lightPDs", "mediumPDs", "heavyPDs"), id.vars = c("year"), variable.name = "Exposure", value.name = "PersonDays") %>% 
+  ggplot() + geom_bar(aes(x= year, y= PersonDays, size = 3, fill = factor(Exposure)), stat="identity", position ="dodge")
+
 
 
 ####### make heat map #######
@@ -82,7 +303,7 @@ merge(dateList,
             julian = yday(date)
   )] %>%
   melt.data.table(id.vars = c("year", "julian"),
-                  measure.vars = c("lightPD", "mediumPD", "heavyPD")) %>% 
+                  measure.vars = c("heavyPD")) %>% 
   ggplot() + 
   geom_tile(aes(x=year, y = julian, fill=value, alpha = value)) +
   scale_fill_gradient(low = "gray0", high = "red")  +
@@ -90,77 +311,285 @@ merge(dateList,
   facet_grid(.~ variable) + theme_minimal()
 
 
-smoke2 <- smokeFile[,date2 := as.Date(as.character(date),"%Y%m%d")] 
-key(smoke2)
 
 
-ExposedPOP.stateYear  <- smoke2[,year := year(date2)] %>% 
-  replace_na(list(
-    light = 0,
-    medium = 0,
-    heavy = 0
-  )) %>%
-  .[,.(lightdays = max(light, na.rm = T),
-       mediumdays = max(medium, na.rm = T),
-       heavydays = max(heavy, na.rm = T), 
-       POP = mean(POPULATION, na.rm = T)), 
-    by=.(STATEFP, COUNTYFP, TRACTCE, BLKGRPCE, year)] %>%
-  .[, .(lightPOP = sum(POP*lightdays),
-        mediumPOP = sum(POP*mediumdays),
-        heavyPOP = sum(POP*heavydays),
-        totalPOP = sum(POP)), by =.(STATEFP, year)] # %>%
-# fwrite("~/tempZip/ExposedPOP_stateYear.csv")
 
-ExposedPOP.stateYear %>% 
-  ggplot() + geom_area(aes(x= year, y= heavyPOP/totalPOP, fill=factor(STATEFP))) 
+################################################
+################################################
+#
+# Examine burn area
+#
+################################################
+################################################
+
+
+data.table(foreign::read.dbf("~/GitHub/WFSmokeExp_US/S_USA.MTBS_BURN_AREA_BOUNDARY.dbf")) %>%
+  .[, .(acres = sum(ACRES, na.rm = T)), by=.(YEAR,  FIRE_TYPE)] %>% filter(YEAR >2009) %>%  fwrite("~/tempZip/burnAreaUS.csv")
+  ggplot() + geom_bar(aes(x= YEAR, y= acres/1000000, fill= FIRE_TYPE ), stat="identity", position ="stack")
+
+
+
+%>%
+    date = as.Date(test, format = "%m%d%Y"),
+    monyr = paste0(YEAR,"_", ifelse(STARTMONTH<10, paste0("0",STARTMONTH),STARTMONTH)))
+
+burn %>% 
+  # filter(YEAR >2009) %>% 
+  ggplot( aes(x=YEAR, y = acres, fill = FIRE_TYPE)) + geom_bar(stat="identity") + coord_flip()  
+
+burn <- fread("~/GitHub/WFSmokeExp_US/BurnAreaCountyIntersectText.csv")
+
+plotFile <- merge(
+  {
+    
+    burn[STATEFP == 6,.(burnacres = sum(ACRES)), by=.(YEAR, COUNTYFP, NAMELSAD, FIRE_TYPE )]
+  }, 
+  {
+    smokeFile[STATEFP == 6, .(smokeDays = sum(heavy, na.rm = T),
+                              smokePeople = sum(heavy*POPULATION, na.rm = T),
+                              YEAR = year), by=.(year, COUNTYFP)]
+  }
+  )
+
+
+ggplot(plotFile, aes(x= smokePeople, y = burnacres, color = YEAR)) + geom_point() + facet_wrap(~FIRE_TYPE) 
+
+
+plotFile <- merge({
+  burn[, .(burnacres = sum(ACRES)), by = .(YEAR, FIRE_TYPE)]
+},
+{
+  smokeFile[, .(smokeDays = sum(heavy, na.rm = T) / length(is.numeric(heavy)),
+                YEAR = year), by = .(year)]
+}, by = "YEAR", all.y = T)
+plotFile <- merge({
+  burn[, .(burnacres = sum(ACRES)), by = .(YEAR, STATEFP, COUNTYFP, NAMELSAD, FIRE_TYPE)]
+},
+{
+  smokeFile[, .(
+    smokeDays = sum(light, na.rm = T),
+    smokePeople = sum(light *
+                        POPULATION, na.rm = T),
+    YEAR = year
+  ), by = .(year, STATEFP, COUNTYFP)]
+})
+ggplot(plotFile, aes(x = smokeDays, y = burnacres, color = FIRE_TYPE)) + geom_point() + facet_wrap( ~
+                                                                                                      YEAR)
+
+
+  
+
 
 
 
 ############# gather data for Caitlin ############# 
 ############# combine with zips for EHIB ############# 
+# 
+# CAzips <- st_read("~/GitHub/WFSmokeExp_US/CAzips.shp") %>% st_transform(crs = 4326) 
+# CAzipsBG <-st_intersection({popCentroidsBG %>% filter(STATEFP == 6, COUNTYFP %in% c(1, 5, 9, 13, 43, 45, 55, 75, 79,81, 83, 95, 97, 99, 111))}, CAzips)
+# st_geometry(CAzipsBG) <- NULL
 
-CAzips <- st_read("~/GitHub/WFSmokeExp_US/CAzips.shp") %>% st_transform(crs = 4326) 
-CAzipsBG <-st_intersection({popCentroidsBG %>% filter(STATEFP == 6, COUNTYFP %in% c(1, 5, 9, 13, 43, 45, 55, 75, 79,81, 83, 95, 97, 99, 111))}, CAzips)
-st_geometry(CAzipsBG) <- NULL
+####################################
+## make Tract key for Caitlin
+
+TandHtracts <- fread("//phdeorlcsrvip01/Crossbranch/OHE-EHIB-WILDFIRE/HMS4Caitlin/tractTandH_selectedCounties.csv")
+
+geoids <- as.data.frame(unique(TandHtracts$geoid10)) %>% 
+  mutate(
+    STATEFP =as.integer(substr(x, 1,1)),
+    COUNTYFP =as.integer(substr(x, 2,4)),
+    TRACTCE =as.integer(substr(x, 5,10))
+  )
+
+names(geoids) <- c("geoid10","STATEFP","COUNTYFP","TRACTCE")
+
+geoids <- data.table(geoids)
+
+names(TandHtracts)
+
+
+library(data.table)
+
+TandHtracts <- fread("//phdeorlcsrvip01/Crossbranch/OHE-EHIB-WILDFIRE/HMS4Caitlin/tractTandH_selectedCounties.csv")
+
+TandHtracts  %>% fwrite("~/TandHtest.csv")
+
+
+
+HI <-
+  TandHtracts[, .(TEMP = (((tmmx_mean + tmmn_mean) / 2) - 273.15) * 9 / 5 + 32,
+                  RH = (rmax_mean + rmin_mean) / 2), by = .(Day, geoid10)] %>% 
+  .[, HIscreen := ifelse(TEMP <= 40, "T", ifelse({
+    -0.3 + 1.1 * TEMP + 0.047 * RH
+  } < 79, "A", "B"))] %>%
+  .[, HI := ifelse(HIscreen == "B", {
+    -42.379 + 2.04901523 * TEMP + 10.14333127 * RH - .22475541 * TEMP * RH - .00683783 *
+      TEMP * TEMP - .05481717 * RH * RH + .00122874 * TEMP * TEMP * RH + .00085282 *
+      TEMP * RH * RH - .00000199 * TEMP * TEMP * RH * RH
+  }, TEMP)] %>%
+  .[, HIfinal := ifelse(HIscreen == "T", TEMP,
+                      ifelse(
+                        HIscreen == "A", {-0.3 + 1.1 * TEMP + 0.047 * RH},
+                          ifelse(RH <= 13 & TEMP >= 80 & TEMP <= 112,  HI - (((13 - RH) / 4) * ((17 - abs(TEMP - 95)) / 17)^0.5),
+                            ifelse(RH > 85 & TEMP >= 80 & TEMP <= 87, HI + 0.02 * (RH - 85) * (87 - TEMP), HI)
+                          )
+                        )
+                      )] 
+
+
+HI %>% ggplot() + geom_histogram(aes(x = HIfinal),binwidth = 1)
+
+
+HI %>% ggplot() + geom_point(aes(x = TEMP, y=RH, color = HIfinal), alpha=0.1) + scale_color_gradient2(mid = "orange" ,high = "red")
+
+max(HI$TEMP, na.rm = T)
+# 
+# HI[is.na(HIadjusted)] %>% fwrite("//phdeorlcsrvip01/Crossbranch/OHE-EHIB-WILDFIRE/HMS4Caitlin/HeatIndexErrors.csv")
+
+HI[HIadjusted >150] %>% fwrite("//phdeorlcsrvip01/Crossbranch/OHE-EHIB-WILDFIRE/HMS4Caitlin/HeatIndexOutliers.csv")
+
+dates <-as.integer(format(
+  seq(
+    as.Date("20150101", format = "%Y%m%d"),
+    as.Date("20171231", format = "%Y%m%d"),
+    by = "day"
+  ), format = "%Y%m%d"
+))
+
 
 Caitlin <-
-  smokeFile[.(c(20150101:20171231), 6L)] %>% merge(select(CAzipsBG, STATEFP, COUNTYFP, TRACTCE, BLKGRPCE, ZCTA5CE10)) %>% replace_na(list(
+  smokeFile[date %in% dates & STATEFP == 6 & COUNTYFP %in% c(1, 5, 9, 13, 43, 45, 55, 75, 79,81, 83, 95, 97, 99, 111)] %>% 
+  merge(geoids, by = c("STATEFP","COUNTYFP","TRACTCE")) %>%
+  replace_na(list(
     light = 0,
     medium = 0,
     heavy = 0
-  )) %>%
+  )) %>% 
+  na.omit() %>%
   .[, .(
     lightSmoke = max(light, na.rm = T),
     mediumSmoke = max(medium, na.rm = T),
     heavySmoke = max(heavy, na.rm = T)
-  ), by = .(date, ZCTA5CE10)] %>%
-  .[, maxSmoke := factor(ifelse(
-    heavySmoke == 1,
-    "heavy",
-    ifelse(
-      mediumSmoke == 1,
-      "medium",
-      ifelse(lightSmoke ==
-               1, "light", "none")
-    )
-  ),
-  levels = c("none", "light", "medium", "heavy"))]
+  ), by = .(date, geoid10)] %>%
+  .[, maxSmoke := ifelse(heavySmoke == 1,
+                         "heavy",
+                         ifelse(mediumSmoke == 1,
+                               "medium",
+                                ifelse(lightSmoke ==
+                                         1, "light", "none")))]
 
-setkey(Caitlin, date, ZCTA5CE10)
+
+setkey(Caitlin, date, geoid10)
 
 fullGrid <- data.table({
-  expand.grid(date = as.integer(format(seq(as.Date("20150101", format ="%Y%m%d" ),as.Date("20171231", format ="%Y%m%d"), by = "day"), format ="%Y%m%d")), ZCTA5CE10 = unique(CAzipsBG$ZCTA5CE10))
-})
+  expand.grid(date = as.integer(format(
+    seq(
+      as.Date("20150101", format = "%Y%m%d"),
+      as.Date("20171231", format = "%Y%m%d"),
+      by = "day"
+    ), format = "%Y%m%d"
+  )),
+  geoid10 = unique(Caitlin$geoid10))
+}) %>% .[, .(date = date,
+             geoid10 = as.double(geoid10))]
 
-setkey(fullGrid, date, ZCTA5CE10)
+setkey(fullGrid, date, geoid10)
 
-merge(fullGrid, Caitlin, by = c("date","ZCTA5CE10"), all.x = TRUE ) %>% 
+smokeDays <- merge(fullGrid, Caitlin, all.x = TRUE) %>% 
   replace_na(list(
     lightSmoke = 0,
     mediumSmoke = 0,
     heavySmoke = 0,
     maxSmoke = "none"
-  ))  %>% fwrite("//phdeorlcsrvip01/crossbranch/OHE-EHIB-WILDFIRE/HMS4Caitlin/rawSmoke4Caitlin_15counties.csv")
+  )) %>%
+  fwrite("//phdeorlcsrvip01/Crossbranch/OHE-EHIB-WILDFIRE/HMS4Caitlin/rawDayTract4Caitlin12-14.csv")
+
+
+
+  .[,.(year=year(as.Date(as.character(date), "%Y%m%d")),
+       geoid, anySmoke = maxSmoke)] %>%
+  .[,.(smokeDays =sum(anySmoke, na.rm = T)), by = .(year, geoid)] 
+  
+  
+  
+shape <- inner_join(CAzips, smokeDays)
+
+foo <- fread("//phdeorlcsrvip01/Crossbranch/OHE-EHIB-WILDFIRE/HMS4Caitlin/rawDayTract4Caitlin12-6.csv")
+bar <- smokeDays[geoid10 =="6097152701" & date =="20150625"]
+
+bar
+
+
+bar[date =="20150625"]
+
+
+
+library(leaflet)
+
+sd2 <- smokeDays %>% dcast.data.table(formula = ZCTA5CE10 ~ year) 
+names(sd2) <- c("ZCTA5CE10", "Y2015", "Y2016", "Y2017")
+
+shape <- inner_join(CAzips, sd2)
+
+shape  %>% st_write("C:/Users/jvargo/Downloads/2015_17SmokeDays.geojson")
+
+pal <- colorNumeric(
+  palette = "YlOrRd",
+  domain =  0:70
+)
+
+
+
+shape %>%
+  leaflet()  %>%
+  # addProviderTiles(providers$CartoDB.Voyager) %>%
+  addTiles()%>%
+addPolygons(
+  color = "#444444",
+  weight = 1,
+  smoothFactor = 0.1,
+  fillOpacity = 0.6,
+  fillColor = ~ pal(Y2015),
+  highlightOptions = highlightOptions(color = "white", weight = 2,
+                                      bringToFront = TRUE),
+  popup = ~paste0("This is zip ", ZCTA5CE10 ," in 2015 it experienced ", Y2015," days of wildfire smoke."),
+  group="2015 Smoke Days")  %>%
+  addPolygons(
+    color = "#444444",
+    weight = 1,
+    smoothFactor = 0.1,
+    fillOpacity = 0.6,
+    fillColor = ~ pal(Y2016),
+    highlightOptions = highlightOptions(color = "white", weight = 2,
+                                        bringToFront = TRUE),
+    popup = ~paste0("This is zip ", ZCTA5CE10 ," in 2016 it experienced ", Y2016," days of wildfire smoke."),
+                    group="2016 Smoke Days")  %>%
+  addPolygons(
+    color = "#444444",
+    weight = 1,
+    smoothFactor = 0.1,
+    fillOpacity = 0.6,
+    fillColor = ~ pal(Y2017),
+    highlightOptions = highlightOptions(color = "white", weight = 2,
+                                        bringToFront = TRUE),
+    popup = ~paste0("This is zip ", ZCTA5CE10 ," in 2017 it experienced ", Y2017," days of wildfire smoke."),
+                    group="2017 Smoke Days")  %>%
+  addLayersControl(
+    baseGroups =  c("2015 Smoke Days","2016 Smoke Days","2017 Smoke Days"),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  addLegend("bottomright", pal = pal, values = ~Y2017,
+              title = "Days of Smoke",
+              labFormat = labelFormat(suffix = " days", transform = as.integer),
+              opacity = .5
+  )
+
+
+
+
+
+  
+  # fwrite("//phdeorlcsrvip01/crossbranch/OHE-EHIB-WILDFIRE/HMS4Caitlin/rawSmoke4Caitlin_15counties.csv")
 
 
 # %>% .[,.(date, zip = ZCTA5CE10, maxSmoke)] %>%
@@ -192,10 +621,10 @@ averages <- merge(dateList, # list of all dates
             week = week(date),
             month = month(date),
             day = day(date))] %>%  # create new fields for day and year specifics
-  melt.data.table(id.vars = c("date", "year", "week", "STATEFP","COUNTYFP"), measure.vars = c("lightPD", "mediumPD", "heavyPD")) %>% # gather the smoke levels
+  melt.data.table(id.vars = c("date", "year", "month", "STATEFP","COUNTYFP"), measure.vars = c("lightPD", "mediumPD", "heavyPD")) %>% # gather the smoke levels
   # .[,average := mean(value, na.rm = T), by=.(week, variable)] 
-  dcast.data.table(formula = week + STATEFP + COUNTYFP + variable ~ year, value.var = "value", fun = mean,  fill = 0) %>% 
-  .[, .(average = mean(c(`2011`, `2012`, `2013`, `2014`, `2015`, `2016`, `2017`), na.rm = T)), by = .(week, variable, STATEFP, COUNTYFP)]  # calculate average for that day across all years
+  dcast.data.table(formula = month + STATEFP + COUNTYFP + variable ~ year, value.var = "value", fun = mean,  fill = 0) %>% 
+  .[, .(average = mean(c(`2010`,`2011`, `2012`, `2013`, `2014`, `2015`, `2016`, `2017`, `2018`), na.rm = T)), by = .(month, variable, STATEFP, COUNTYFP)]  # calculate average for that week across all years
 
 plotData <- merge(dateList, # list of all dates
       {
@@ -222,14 +651,24 @@ plotData <- merge(dateList, # list of all dates
             week = week(date),
             month = month(date),
             day = day(date))] %>%  # create new fields for day and year specifics
-  melt.data.table(id.vars = c("date", "year", "week", "STATEFP","COUNTYFP"), measure.vars = c("lightPD", "mediumPD", "heavyPD"))
+  melt.data.table(id.vars = c("date", "year", "month", "STATEFP","COUNTYFP"), measure.vars = c("lightPD", "mediumPD", "heavyPD"))
 
 plotData <- merge(plotData, averages)
 
 
 # check Chicago numbers http://www.epa.state.il.us/air/pm25/index.html
 # arb <- plotData[STATEFP == 17L & COUNTYFP == 31L, .(diff= sum(value - average, na.rm = T)), by= .(date, variable)]
-arb <- plotData[, .(diff= sum(value - average, na.rm = T)), by= .(date, variable, STATEFP)]
+arb <- plotData[, .(diff= sum(value - average, na.rm = T),
+                    total = sum(value, na.rm = T)), by= .(date, variable)]
+setkey(arb, date)
+
+plotData[, `:=` (year = year(date))] %>%
+  .[, .(diff= sum(value - average, na.rm = T),
+        total = sum(value, na.rm = T)), by= .(year, STATEFP, variable)] %>% 
+  fwrite("~/GitHub/WFSmokeExp/anomoly2.csv")
+
+
+
 
 
 # the difference between the number of people exposed in each county on a given day and the historical average for that week and place 
@@ -238,8 +677,8 @@ ggplotly({
     geom_area(aes(x = date, y = diff, fill = variable),
               stat = "identity",
               position = "stack") +
-    facet_wrap( ~ STATEFP) +
     scale_fill_manual(values = c("yellow", "orange", "red")) +
+    facet_grid(variable ~ ., scales = "free_y") + 
     geom_hline(
       yintercept = 0,
       color = "gray40",
