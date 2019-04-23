@@ -353,6 +353,23 @@ rbindlist(mclapply(list.files(dailyFileFolderPath,full.names = T), fread), fill 
 
 
 
+#######################################################################
+# Update Smoke File for use in other locations - some data subsetting and aggregation
+
+smokeFile <- fread("R:/WFSmokeProcessing/HMSdata/smokeFile.csv" )
+smokeFile %>% saveRDS("R:/WFSmokeProcessing/HMSdata/smokeFile.rds" )
+# smokeFile[STATEFP ==6L] %>% fwrite("~/data/CAsmokeFile.csv" )
+smokeFile[STATEFP ==6L] %>% fwrite('R:/ClimateExposures/CAsmokeFile.csv')
+# 
+replace_na(smokeFile, list(light = 0, medium = 0, heavy= 0)) %>% .[, .(light = sum(light * POPULATION, na.rm=T),
+                                                                       medium = sum(medium * POPULATION, na.rm=T),
+                                                                       heavy = sum(heavy * POPULATION, na.rm=T),
+                                                                       POPULATION = sum(POPULATION, na.rm=T)), by=.(date, STATEFP, COUNTYFP)] %>%
+  fwrite("~/GitHub/WFSmokeExp/MMWRdashboard/USsmokeFile.csv")
+# 
+
+
+
 
 
 
