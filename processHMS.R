@@ -359,7 +359,21 @@ rbindlist(mclapply(list.files(dailyFileFolderPath,full.names = T), fread), fill 
 smokeFile <- fread("R:/WFSmokeProcessing/HMSdata/smokeFile.csv" )
 smokeFile %>% saveRDS("R:/WFSmokeProcessing/HMSdata/smokeFile.rds" )
 # smokeFile[STATEFP ==6L] %>% fwrite("~/data/CAsmokeFile.csv" )
-smokeFile[STATEFP ==6L] %>% fwrite('R:/ClimateExposures/CAsmokeFile.csv')
+smokeFile[STATEFP == 6L]  %>% replace_na(list(
+  light = 0,
+  medium = 0,
+  heavy = 0
+)) %>%
+  .[, .(
+    light = max(light, na.rm = T),
+    medium = max(medium, na.rm = T),
+    heavy = max(heavy, na.rm = T),
+    POPULATION = mean(POPULATION, na.rm = T)
+  ),
+  by = .(date, STATEFP, COUNTYFP, TRACTCE)] %>%
+  fwrite("R:/ClimateExposures/CAsmokeFileTracts.csv")
+
+# %>% fwrite('R:/ClimateExposures/CAsmokeFile.csv')
 # 
 replace_na(smokeFile, list(light = 0, medium = 0, heavy= 0)) %>% .[, .(light = sum(light * POPULATION, na.rm=T),
                                                                        medium = sum(medium * POPULATION, na.rm=T),
@@ -367,9 +381,6 @@ replace_na(smokeFile, list(light = 0, medium = 0, heavy= 0)) %>% .[, .(light = s
                                                                        POPULATION = sum(POPULATION, na.rm=T)), by=.(date, STATEFP, COUNTYFP)] %>%
   fwrite("~/GitHub/WFSmokeExp/MMWRdashboard/USsmokeFile.csv")
 # 
-
-
-
 
 
 
